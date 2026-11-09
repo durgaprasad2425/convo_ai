@@ -19,3 +19,4 @@ frontend/.env*.local
 Thumbs.db
 .DS_Store
 *.log
+

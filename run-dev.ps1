@@ -20,3 +20,4 @@ Write-Host "- Frontend:  http://localhost:3000" -ForegroundColor White
 Write-Host "- Backend:   http://127.0.0.1:8000" -ForegroundColor White
 Write-Host "- Swagger:   http://127.0.0.1:8000/docs" -ForegroundColor White
 Write-Host "========================================================" -ForegroundColor Cyan
+

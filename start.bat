@@ -17,3 +17,4 @@ echo Both servers have been launched in separate windows!
 echo - Frontend: http://localhost:3000
 echo - Backend API Docs: http://localhost:8000/docs
 echo ========================================================
+

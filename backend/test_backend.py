@@ -20,3 +20,4 @@ async def test_stream():
 if __name__ == "__main__":
     asyncio.run(test_stream())
     print("Backend test passed successfully!")
+
