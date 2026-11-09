@@ -472,16 +472,11 @@ export default function ChatPage() {
     const newMessages = [...baseHistory, userMessage];
     updateCurrentSessionMessages(newMessages);
 
-    const selectedModelObj = availableModels.find((m) => m.id === activeModel);
-    const provider = selectedModelObj?.provider || "mock";
-
     const assistantPlaceholder: Message = {
       id: assistantMessageId,
       role: "assistant",
       content: "",
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      model: activeModel,
-      provider: provider,
       isStreaming: true,
     };
 
@@ -497,8 +492,6 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
-          provider: provider,
-          model: activeModel,
           temperature: temperature,
         }),
         signal: abortController.signal,
@@ -846,23 +839,8 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Model Selector & Actions */}
+          {/* Action Buttons */}
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <select
-                value={activeModel}
-                onChange={(e) => setActiveModel(e.target.value)}
-                className="appearance-none bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl pl-3 pr-8 py-2 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer hover:bg-slate-750 transition-colors"
-              >
-                {availableModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} {!m.is_available && m.provider !== "mock" ? "(Needs Key)" : ""}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-
             <button
               onClick={() => setShowSettings(!showSettings)}
               className={`p-2 rounded-xl border transition-colors ${
@@ -870,7 +848,7 @@ export default function ChatPage() {
                   ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
                   : "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
               }`}
-              title="Settings"
+              title="Workflow Info"
             >
               <Sliders className="w-4 h-4" />
             </button>
