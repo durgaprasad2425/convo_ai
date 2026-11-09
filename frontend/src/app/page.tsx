@@ -78,6 +78,20 @@ const DEFAULT_MODELS: ModelInfo[] = [
     description: "Built-in intake & appointment state machine (no API key required).",
   },
   {
+    id: "mistral-small-latest",
+    name: "Mistral Small 3",
+    provider: "mistral",
+    is_available: false,
+    description: "Fast, high-efficiency Mistral AI reasoning model.",
+  },
+  {
+    id: "mistral-large-latest",
+    name: "Mistral Large 2",
+    provider: "mistral",
+    is_available: false,
+    description: "Mistral AI flagship frontier model for complex customer workflows.",
+  },
+  {
     id: "gemini-2.5-flash",
     name: "Gemini 2.5 Flash",
     provider: "gemini",

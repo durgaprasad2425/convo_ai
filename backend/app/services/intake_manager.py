@@ -1,6 +1,7 @@
 import re
 from typing import Dict, Any, Optional, List, Tuple
 from app.schemas import ChatMessage, ChatRequest
+from app.db import create_appointment
 
 
 INTAKE_SYSTEM_PROMPT = """You are "Convo Desk", an intelligent, empathetic customer intake and appointment scheduling assistant.
@@ -165,12 +166,27 @@ def simulate_intake_flow(messages: List[ChatMessage]) -> str:
         if len(name) > 30 or not name:
             name = "Valued Customer"
 
+        ref_id = f"CNV-{abs(hash(email + last_user_input)) % 90000 + 10000}"
+        
+        # Persist to database
+        try:
+            create_appointment(
+                ref_id=ref_id,
+                name=name,
+                phone=phone,
+                email=email,
+                purpose=user_messages[0],
+                appointment_time=last_user_input
+            )
+        except Exception as e:
+            print(f"Error persisting appointment: {e}")
+
         return (
             "✅ **Appointment Confirmed!**\n\n"
             "Thank you! Your appointment has been scheduled successfully. Here is your final booking confirmation:\n\n"
             "| Field | Details |\n"
             "| :--- | :--- |\n"
-            "| **Reference ID** | `CNV-84920` |\n"
+            f"| **Reference ID** | `{ref_id}` |\n"
             f"| **Customer Name** | {name} |\n"
             f"| **Phone Number** | {phone} |\n"
             f"| **Email Address** | {email} |\n"
@@ -186,3 +202,4 @@ def simulate_intake_flow(messages: List[ChatMessage]) -> str:
         "Your appointment (`CNV-84920`) is confirmed! "
         "Is there any additional question or requirement you would like us to note for your specialist?"
     )
+

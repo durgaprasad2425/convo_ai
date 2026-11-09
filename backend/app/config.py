@@ -11,10 +11,12 @@ class Settings(BaseSettings):
     # Provider API keys
     gemini_api_key: str = ""
     openai_api_key: str = ""
+    mistral_api_key: str = ""
     
     # Defaults
     default_gemini_model: str = "gemini-2.5-flash"
     default_openai_model: str = "gpt-4o-mini"
+    default_mistral_model: str = "mistral-small-latest"
     active_provider: str = "mock"
     
     # CORS

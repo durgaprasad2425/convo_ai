@@ -18,7 +18,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
-    provider: Optional[Literal["gemini", "openai", "mock"]] = None
+    provider: Optional[Literal["gemini", "openai", "mistral", "mock"]] = None
     model: Optional[str] = None
     temperature: Optional[float] = 0.7
     system_prompt: Optional[str] = None

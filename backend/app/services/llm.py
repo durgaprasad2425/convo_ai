@@ -20,10 +20,8 @@ async def mock_stream(request: ChatRequest) -> AsyncGenerator[str, None]:
     """
     Deterministic simulated streaming response following the 6 intake & scheduling requirements.
     """
-    # Use intake flow simulator
     reply = simulate_intake_flow(request.messages)
 
-    # Stream out reply words with smooth pacing
     words = reply.split(" ")
     for i, word in enumerate(words):
         await asyncio.sleep(0.03)
@@ -31,9 +29,55 @@ async def mock_stream(request: ChatRequest) -> AsyncGenerator[str, None]:
         payload = {"chunk": prefix + word, "done": False}
         yield f"data: {json.dumps(payload)}\n\n"
 
-    # Send final done event with intake details extracted
     state = extract_intake_state(request.messages)
     yield f"data: {json.dumps({'chunk': '', 'done': True, 'model': 'mock-intake-v1', 'provider': 'mock', 'intake_state': state})}\n\n"
+
+
+async def mistral_stream(request: ChatRequest) -> AsyncGenerator[str, None]:
+    """Streams responses from Mistral AI API with intake & appointment system instructions."""
+    api_key = settings.mistral_api_key
+    if not api_key:
+        yield f"data: {json.dumps({'chunk': 'Error: MISTRAL_API_KEY is not configured in backend/.env', 'done': True, 'error': True})}\n\n"
+        return
+
+    try:
+        from openai import AsyncOpenAI
+        # Mistral AI provides an official OpenAI-compatible endpoint
+        client = AsyncOpenAI(api_key=api_key, base_url="https://api.mistral.ai/v1")
+        
+        attachment_ctx = build_attachment_context(request.attachments or [])
+        model_name = request.model or settings.default_mistral_model
+        messages: List[Dict[str, str]] = []
+        
+        system_content = INTAKE_SYSTEM_PROMPT
+        if request.system_prompt:
+            system_content += f"\n\nAdditional Instructions: {request.system_prompt}"
+        if attachment_ctx:
+            system_content += f"\n\nContext files:\n{attachment_ctx}"
+
+        messages.append({"role": "system", "content": system_content})
+            
+        for msg in request.messages:
+            messages.append({"role": msg.role, "content": msg.content})
+
+        response = await client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            temperature=request.temperature or 0.7,
+            stream=True
+        )
+
+        async for chunk in response:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            text = delta.content if delta and delta.content else ""
+            if text:
+                payload = {"chunk": text, "done": False}
+                yield f"data: {json.dumps(payload)}\n\n"
+
+        state = extract_intake_state(request.messages)
+        yield f"data: {json.dumps({'chunk': '', 'done': True, 'model': model_name, 'provider': 'mistral', 'intake_state': state})}\n\n"
+    except Exception as e:
+        yield f"data: {json.dumps({'chunk': f'Mistral Error: {str(e)}', 'done': True, 'error': True})}\n\n"
 
 
 async def gemini_stream(request: ChatRequest) -> AsyncGenerator[str, None]:
@@ -135,7 +179,12 @@ async def get_stream_generator(request: ChatRequest) -> AsyncGenerator[str, None
     """Determines provider and returns corresponding stream generator."""
     provider = request.provider or settings.active_provider
     
-    if provider == "gemini":
+    if provider == "mistral":
+        if settings.mistral_api_key:
+            return mistral_stream(request)
+        else:
+            return mock_stream(request)
+    elif provider == "gemini":
         if settings.gemini_api_key:
             return gemini_stream(request)
         else:
@@ -151,6 +200,7 @@ async def get_stream_generator(request: ChatRequest) -> AsyncGenerator[str, None
 
 def get_available_models() -> List[ModelInfo]:
     """Returns available models based on active keys."""
+    has_mistral = bool(settings.mistral_api_key)
     has_gemini = bool(settings.gemini_api_key)
     has_openai = bool(settings.openai_api_key)
     
@@ -161,6 +211,27 @@ def get_available_models() -> List[ModelInfo]:
             provider="mock",
             is_available=True,
             description="Dedicated Customer Intake & Scheduling state machine (zero API keys required)."
+        ),
+        ModelInfo(
+            id="mistral-small-latest",
+            name="Mistral Small 3",
+            provider="mistral",
+            is_available=has_mistral,
+            description="Fast, high-efficiency Mistral AI reasoning model."
+        ),
+        ModelInfo(
+            id="mistral-large-latest",
+            name="Mistral Large 2",
+            provider="mistral",
+            is_available=has_mistral,
+            description="Mistral AI flagship frontier model for complex customer workflows."
+        ),
+        ModelInfo(
+            id="codestral-latest",
+            name="Codestral",
+            provider="mistral",
+            is_available=has_mistral,
+            description="Mistral's dedicated code and structured data model."
         ),
         ModelInfo(
             id="gemini-2.5-flash",
