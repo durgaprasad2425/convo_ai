@@ -38,6 +38,22 @@ def list_models():
     return get_available_models()
 
 
+@app.get("/api/welcome")
+def get_welcome_message():
+    """Requirement 1: Official customer intake greeting."""
+    return {
+        "role": "assistant",
+        "content": (
+            "👋 **Hello and welcome!**\n\n"
+            "I'm **Convo Desk**, your virtual assistant. I'm here to assist with your questions "
+            "and help schedule an appointment with our specialist team.\n\n"
+            "To get started, could you please tell me your **full name** and the **purpose of your enquiry** today?"
+        ),
+        "sender": "Convo Desk",
+        "status": "ready"
+    }
+
+
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
     """

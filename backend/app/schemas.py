@@ -3,6 +3,13 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 
+class Attachment(BaseModel):
+    name: str
+    content: str
+    size: int
+    mime_type: Optional[str] = "text/plain"
+
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str
@@ -15,6 +22,7 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
     temperature: Optional[float] = 0.7
     system_prompt: Optional[str] = None
+    attachments: Optional[List[Attachment]] = None
 
 
 class ChatResponse(BaseModel):
@@ -31,4 +39,3 @@ class ModelInfo(BaseModel):
     provider: str
     is_available: bool
     description: Optional[str] = None
-

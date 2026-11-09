@@ -25,6 +25,13 @@ import {
   VolumeX,
   Download,
   RotateCcw,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Phone,
+  Mail,
+  HelpCircle,
+  FileText,
 } from "lucide-react";
 
 interface Message {
@@ -35,6 +42,15 @@ interface Message {
   model?: string;
   provider?: string;
   isStreaming?: boolean;
+}
+
+interface IntakeState {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  purpose: string | null;
+  appointment: string | null;
+  confirmed: boolean;
 }
 
 interface ChatSession {
@@ -55,56 +71,38 @@ interface ModelInfo {
 
 const DEFAULT_MODELS: ModelInfo[] = [
   {
-    id: "mock-convo-v1",
-    name: "Convo AI Simulator (Mock)",
+    id: "mock-intake-v1",
+    name: "Convo Intake Bot (Mock)",
     provider: "mock",
     is_available: true,
-    description: "Built-in fast simulated LLM for testing without API keys.",
+    description: "Built-in intake & appointment state machine (no API key required).",
   },
   {
     id: "gemini-2.5-flash",
     name: "Gemini 2.5 Flash",
     provider: "gemini",
     is_available: false,
-    description: "Ultra-fast, versatile Google multimodal model.",
-  },
-  {
-    id: "gemini-2.5-pro",
-    name: "Gemini 2.5 Pro",
-    provider: "gemini",
-    is_available: false,
-    description: "Google's highest intelligence reasoning model.",
+    description: "Google Gemini configured with 6-step customer intake instructions.",
   },
   {
     id: "gpt-4o-mini",
     name: "GPT-4o Mini",
     provider: "openai",
     is_available: false,
-    description: "Fast, lightweight OpenAI flagship model.",
+    description: "OpenAI GPT-4o Mini configured with 6-step customer intake instructions.",
   },
 ];
 
-const SUGGESTIONS = [
-  {
-    title: "How does SSE streaming work?",
-    desc: "Explain the architecture of real-time token streaming",
-    prompt: "Can you explain how Server-Sent Events (SSE) work for LLM token streaming?",
-  },
-  {
-    title: "Write a Python script",
-    desc: "Create an async API client with error handling",
-    prompt: "Write a Python script using httpx to call a REST API with retries and error handling.",
-  },
-  {
-    title: "Brainstorm SaaS Ideas",
-    desc: "AI-driven micro SaaS opportunities for 2026",
-    prompt: "Give me 3 innovative AI micro-SaaS ideas that can be built by a solo developer.",
-  },
-  {
-    title: "FastAPI vs Next.js API",
-    desc: "When to choose Python backend vs Node serverless",
-    prompt: "What are the trade-offs between using a FastAPI backend versus Next.js API routes for AI applications?",
-  },
+const INITIAL_WELCOME_TEXT = 
+  "👋 **Hello and welcome!**\n\n" +
+  "I'm **Convo Desk**, your virtual customer service and scheduling assistant.\n\n" +
+  "To assist you properly and schedule an appointment with our specialist, may I have your **full name** and the **purpose of your enquiry** today?";
+
+const QUICK_INQUIRIES = [
+  "Hi, I'm Sarah Jenkins. I want to schedule a product demo for my team.",
+  "Hello, my name is David Miller. I need a technical consultation on cloud migration.",
+  "Hi, I am Emily Zhang. I'd like to inquire about enterprise pricing & contracts.",
+  "Hello! I am Mark Davis and I want to book a support consultation.",
 ];
 
 export default function ChatPage() {
@@ -112,11 +110,10 @@ export default function ChatPage() {
   const [activeSessionId, setActiveSessionId] = useState<string>("");
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [activeModel, setActiveModel] = useState("mock-convo-v1");
+  const [activeModel, setActiveModel] = useState("mock-intake-v1");
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>(DEFAULT_MODELS);
   const [backendStatus, setBackendStatus] = useState<"checking" | "online" | "offline">("checking");
   const [temperature, setTemperature] = useState(0.7);
-  const [systemPrompt, setSystemPrompt] = useState("You are Convo AI, an intelligent, helpful, and concise conversational assistant.");
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -131,44 +128,116 @@ export default function ChatPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const speechRecognitionRef = useRef<any>(null);
 
+  // Helper to create an initial session with the official Welcome Message (Req 1)
+  const createFreshSession = (): ChatSession => ({
+    id: "session-" + Date.now(),
+    title: "New Customer Enquiry",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    model: activeModel,
+    messages: [
+      {
+        id: "welcome-msg",
+        role: "assistant",
+        content: INITIAL_WELCOME_TEXT,
+        timestamp: "Just now",
+        model: activeModel,
+        provider: "intake-bot",
+        isStreaming: false,
+      },
+    ],
+  });
+
   // Load sessions from localStorage on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("convo_ai_sessions");
+      const saved = localStorage.getItem("convo_intake_sessions");
       if (saved) {
         const parsed: ChatSession[] = JSON.parse(saved);
         if (parsed.length > 0) {
           setSessions(parsed);
           setActiveSessionId(parsed[0].id);
-          setActiveModel(parsed[0].model || "mock-convo-v1");
+          setActiveModel(parsed[0].model || "mock-intake-v1");
           return;
         }
       }
     } catch (e) {
       console.warn("Failed to load sessions from storage:", e);
     }
-    createNewSession();
+    const fresh = createFreshSession();
+    setSessions([fresh]);
+    setActiveSessionId(fresh.id);
   }, []);
 
   // Save sessions to localStorage
   useEffect(() => {
     if (sessions.length > 0) {
-      localStorage.setItem("convo_ai_sessions", JSON.stringify(sessions));
+      localStorage.setItem("convo_intake_sessions", JSON.stringify(sessions));
     }
   }, [sessions]);
 
   // Current active session
   const currentSession = sessions.find((s) => s.id === activeSessionId) || {
     id: "temp",
-    title: "New Chat",
+    title: "New Customer Enquiry",
     createdAt: "2026-01-01T00:00:00.000Z",
-    messages: [],
+    messages: [
+      {
+        id: "welcome-msg-temp",
+        role: "assistant",
+        content: INITIAL_WELCOME_TEXT,
+        timestamp: "Just now",
+        model: activeModel,
+        provider: "intake-bot",
+        isStreaming: false,
+      },
+    ],
     model: activeModel,
   };
 
   const messages = currentSession.messages;
 
-  // Check backend health and fetch models on mount
+  // Extract client-side intake progress to give user clear live feedback
+  const computeIntakeProgress = (): IntakeState => {
+    const textAll = messages.map((m) => m.content).join(" ");
+    const userMsgs = messages.filter((m) => m.role === "user");
+
+    const emailMatch = textAll.match(/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/);
+    const phoneMatch = textAll.match(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+    const confirmed = textAll.includes("✅") || textAll.toLowerCase().includes("confirmed") || textAll.includes("CNV-");
+
+    let detectedName: string | null = null;
+    let detectedPurpose: string | null = null;
+
+    if (userMsgs.length > 0) {
+      const first = userMsgs[0].content;
+      if (first.toLowerCase().includes("my name is ")) {
+        detectedName = first.split(/my name is /i)[1].split(".")[0].split(",")[0].trim();
+      } else if (first.toLowerCase().includes("i am ")) {
+        detectedName = first.split(/i am /i)[1].split(".")[0].split(",")[0].trim();
+      } else if (first.toLowerCase().includes("i'm ")) {
+        detectedName = first.split(/i'm /i)[1].split(".")[0].split(",")[0].trim();
+      }
+      detectedPurpose = first;
+    }
+
+    let appointmentTime: string | null = null;
+    if (userMsgs.length >= 3) {
+      appointmentTime = userMsgs[userMsgs.length - 1].content;
+    }
+
+    return {
+      name: detectedName,
+      phone: phoneMatch ? phoneMatch[0] : null,
+      email: emailMatch ? emailMatch[0] : null,
+      purpose: detectedPurpose,
+      appointment: appointmentTime,
+      confirmed: confirmed,
+    };
+  };
+
+  const intakeState = computeIntakeProgress();
+
+  // Check backend health
   useEffect(() => {
     checkBackendHealth();
   }, []);
@@ -200,7 +269,6 @@ export default function ChatPage() {
     }
   };
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -211,12 +279,11 @@ export default function ChatPage() {
         if (session.id === activeSessionId) {
           const updated = typeof newMessages === "function" ? newMessages(session.messages) : newMessages;
           
-          // Auto-title if it's the first message and currently named "New Chat"
           let title = session.title;
-          if (title === "New Chat" && updated.length > 0) {
+          if (title === "New Customer Enquiry" && updated.length > 1) {
             const firstUserMsg = updated.find((m) => m.role === "user");
             if (firstUserMsg) {
-              title = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? "..." : "");
+              title = firstUserMsg.content.slice(0, 28) + (firstUserMsg.content.length > 28 ? "..." : "");
             }
           }
 
@@ -229,15 +296,9 @@ export default function ChatPage() {
 
   const createNewSession = () => {
     if (isGenerating) handleStop();
-    const newSession: ChatSession = {
-      id: "session-" + Date.now(),
-      title: "New Chat",
-      createdAt: new Date().toISOString(),
-      messages: [],
-      model: activeModel,
-    };
-    setSessions((prev) => [newSession, ...prev]);
-    setActiveSessionId(newSession.id);
+    const fresh = createFreshSession();
+    setSessions((prev) => [fresh, ...prev]);
+    setActiveSessionId(fresh.id);
   };
 
   const deleteSession = (id: string, e: React.MouseEvent) => {
@@ -246,13 +307,7 @@ export default function ChatPage() {
     
     const remaining = sessions.filter((s) => s.id !== id);
     if (remaining.length === 0) {
-      const fresh: ChatSession = {
-        id: "session-" + Date.now(),
-        title: "New Chat",
-        createdAt: new Date().toISOString(),
-        messages: [],
-        model: activeModel,
-      };
+      const fresh = createFreshSession();
       setSessions([fresh]);
       setActiveSessionId(fresh.id);
     } else {
@@ -280,9 +335,19 @@ export default function ChatPage() {
     }
   };
 
-  const clearCurrentChat = () => {
+  const resetConversation = () => {
     if (isGenerating) handleStop();
-    updateCurrentSessionMessages([]);
+    updateCurrentSessionMessages([
+      {
+        id: "welcome-reset-" + Date.now(),
+        role: "assistant",
+        content: INITIAL_WELCOME_TEXT,
+        timestamp: "Just now",
+        model: activeModel,
+        provider: "intake-bot",
+        isStreaming: false,
+      },
+    ]);
   };
 
   // Text to Speech
@@ -299,7 +364,7 @@ export default function ChatPage() {
     }
 
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text.replace(/```[\s\S]*?```/g, "Code snippet omitted."));
+    const utterance = new SpeechSynthesisUtterance(text.replace(/```[\s\S]*?```/g, "Code omitted.").replace(/\|/g, " "));
     utterance.rate = 1.05;
     utterance.onend = () => setSpeakingMessageId(null);
     utterance.onerror = () => setSpeakingMessageId(null);
@@ -307,21 +372,19 @@ export default function ChatPage() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // Speech to Text (Microphone)
+  // Speech to Text
   const toggleRecording = () => {
     if (typeof window === "undefined") return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.");
+      alert("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
       return;
     }
 
     if (isRecording) {
-      if (speechRecognitionRef.current) {
-        speechRecognitionRef.current.stop();
-      }
+      if (speechRecognitionRef.current) speechRecognitionRef.current.stop();
       setIsRecording(false);
       return;
     }
@@ -341,13 +404,8 @@ export default function ChatPage() {
         setInput(transcript);
       };
 
-      recognition.onerror = () => {
-        setIsRecording(false);
-      };
-
-      recognition.onend = () => {
-        setIsRecording(false);
-      };
+      recognition.onerror = () => setIsRecording(false);
+      recognition.onend = () => setIsRecording(false);
 
       speechRecognitionRef.current = recognition;
       recognition.start();
@@ -358,17 +416,17 @@ export default function ChatPage() {
     }
   };
 
-  // Export Chat
+  // Export Confirmation
   const exportChat = () => {
     if (messages.length === 0) return;
     const content = messages
-      .map((m) => `### ${m.role === "user" ? "User" : "Assistant"} (${m.timestamp})\n\n${m.content}\n\n---\n`)
+      .map((m) => `### ${m.role === "user" ? "Customer" : "Convo Desk"} (${m.timestamp})\n\n${m.content}\n\n---\n`)
       .join("\n");
     const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${currentSession.title.replace(/[^a-zA-Z0-9]/g, "_")}_transcript.md`;
+    link.download = `Intake_Confirmation_${currentSession.id}.md`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -428,13 +486,12 @@ export default function ChatPage() {
           provider: provider,
           model: activeModel,
           temperature: temperature,
-          system_prompt: systemPrompt,
         }),
         signal: abortController.signal,
       });
 
       if (!response.ok) {
-        throw new Error(`Server returned error ${response.status}: ${response.statusText}`);
+        throw new Error(`Server returned error ${response.status}`);
       }
 
       if (!response.body) {
@@ -485,14 +542,14 @@ export default function ChatPage() {
                 );
               }
             } catch (err) {
-              console.error("Error parsing SSE JSON chunk:", err, rawData);
+              console.error("Error parsing SSE JSON chunk:", err);
             }
           }
         }
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        console.log("Stream aborted by user");
+        console.log("Stream stopped");
       } else {
         console.error("Chat error:", err);
         updateCurrentSessionMessages((prev) =>
@@ -502,7 +559,7 @@ export default function ChatPage() {
                   ...msg,
                   content:
                     msg.content +
-                    `\n\n⚠️ *Connection Error: Failed to reach backend API at http://localhost:8000. Please ensure the backend is running.*`,
+                    `\n\n⚠️ *Connection Error: Failed to reach backend API at http://localhost:8000.*`,
                   isStreaming: false,
                 }
               : msg
@@ -515,19 +572,6 @@ export default function ChatPage() {
     }
   };
 
-  // Regenerate last response
-  const handleRegenerate = () => {
-    if (messages.length === 0 || isGenerating) return;
-    const lastUserIdx = [...messages].reverse().findIndex((m) => m.role === "user");
-    if (lastUserIdx === -1) return;
-
-    const actualIdx = messages.length - 1 - lastUserIdx;
-    const userPrompt = messages[actualIdx].content;
-    const historyBefore = messages.slice(0, actualIdx);
-
-    handleSend(userPrompt, historyBefore);
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -535,60 +579,83 @@ export default function ChatPage() {
     }
   };
 
+  // Render markdown and tables cleanly
   const renderMessageContent = (content: string, id: string) => {
-    const parts = content.split(/(```[\s\S]*?```)/g);
+    // If it contains a markdown table (e.g. Booking Confirmation)
+    if (content.includes("| :--- |") || content.includes("| Field |")) {
+      const lines = content.split("\n");
+      const tableRows: string[][] = [];
+      let inTable = false;
+      const nonTableBefore: string[] = [];
+      const nonTableAfter: string[] = [];
 
-    return parts.map((part, index) => {
-      if (part.startsWith("```") && part.endsWith("```")) {
-        const lines = part.slice(3, -3).trim().split("\n");
-        const language = lines[0].match(/^[a-zA-Z0-9_-]+$/) ? lines[0] : "";
-        const code = language ? lines.slice(1).join("\n") : lines.join("\n");
-        const codeBlockId = `${id}-code-${index}`;
-
-        return (
-          <div key={index} className="my-3 overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900 shadow-sm text-sm">
-            <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-800 text-xs text-neutral-400 font-mono">
-              <span>{language || "code"}</span>
-              <button
-                onClick={() => handleCopy(code, codeBlockId)}
-                className="flex items-center gap-1 hover:text-white transition-colors"
-                title="Copy code"
-              >
-                {copiedId === codeBlockId ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-400 text-xs">Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span className="text-xs">Copy</span>
-                  </>
-                )}
-              </button>
-            </div>
-            <pre className="p-3 overflow-x-auto text-neutral-200 font-mono text-xs leading-relaxed">
-              <code>{code}</code>
-            </pre>
-          </div>
-        );
-      }
-
-      const renderedLines = part.split("\n").map((line, lIdx) => {
-        const isBullet = line.trim().startsWith("- ") || line.trim().startsWith("* ");
-        const formattedLine = line.replace(/(\*\*|__)(.*?)\1/g, "<strong>$2</strong>");
-
-        return (
-          <span
-            key={lIdx}
-            className={`block ${isBullet ? "pl-4 before:content-['•'] before:inline-block before:w-3 before:-ml-4 before:text-neutral-400" : ""}`}
-            dangerouslySetInnerHTML={{ __html: formattedLine || "&nbsp;" }}
-          />
-        );
+      lines.forEach((line) => {
+        if (line.trim().startsWith("|")) {
+          inTable = true;
+          if (!line.includes(":---")) {
+            const cols = line.split("|").slice(1, -1).map((c) => c.trim());
+            tableRows.push(cols);
+          }
+        } else {
+          if (!inTable) nonTableBefore.push(line);
+          else nonTableAfter.push(line);
+        }
       });
 
-      return <div key={index} className="space-y-1">{renderedLines}</div>;
+      return (
+        <div className="space-y-3">
+          {nonTableBefore.length > 0 && (
+            <div className="whitespace-pre-wrap">{nonTableBefore.join("\n")}</div>
+          )}
+          {tableRows.length > 0 && (
+            <div className="overflow-x-auto my-3 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 shadow-md">
+              <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-emerald-400">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Verified Appointment Record</span>
+              </div>
+              <table className="w-full text-xs text-left border-collapse">
+                <tbody>
+                  {tableRows.map((row, rIdx) => (
+                    <tr
+                      key={rIdx}
+                      className={rIdx % 2 === 0 ? "bg-neutral-900/60" : "bg-neutral-850/60"}
+                    >
+                      <td className="p-2 font-medium text-neutral-300 border-b border-neutral-800/80 w-1/3">
+                        {row[0]?.replace(/\*\*/g, "")}
+                      </td>
+                      <td className="p-2 font-semibold text-neutral-100 border-b border-neutral-800/80">
+                        {row[1]?.replace(/\*\*/g, "")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {nonTableAfter.length > 0 && (
+            <div className="whitespace-pre-wrap text-neutral-300 italic text-xs">
+              {nonTableAfter.join("\n")}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Standard markdown rendering
+    const renderedLines = content.split("\n").map((line, lIdx) => {
+      const isBullet = line.trim().startsWith("- ") || line.trim().startsWith("* ");
+      const formatted = line.replace(/(\*\*|__)(.*?)\1/g, "<strong>$2</strong>");
+
+      return (
+        <span
+          key={lIdx}
+          className={`block ${isBullet ? "pl-4 before:content-['•'] before:inline-block before:w-3 before:-ml-4 before:text-neutral-400" : ""}`}
+          dangerouslySetInnerHTML={{ __html: formatted || "&nbsp;" }}
+        />
+      );
     });
+
+    return <div className="space-y-1">{renderedLines}</div>;
   };
 
   return (
@@ -596,23 +663,78 @@ export default function ChatPage() {
       {/* Sidebar for Sessions */}
       <aside
         className={`${
-          sidebarOpen ? "w-64" : "w-0"
+          sidebarOpen ? "w-72" : "w-0"
         } transition-all duration-300 ease-in-out border-r border-neutral-800 bg-neutral-925 flex flex-col shrink-0 overflow-hidden relative z-30`}
       >
         <div className="p-3 border-b border-neutral-800 flex items-center justify-between">
           <button
             onClick={createNewSession}
-            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium py-2 px-3 rounded-lg shadow-sm transition-all"
+            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium py-2.5 px-3 rounded-lg shadow-sm transition-all"
           >
             <Plus className="w-4 h-4" />
-            <span>New Chat</span>
+            <span>New Customer Chat</span>
           </button>
         </div>
 
+        {/* Live Requirement Checklist Widget */}
+        <div className="p-3 mx-2 mt-2 rounded-xl border border-neutral-800 bg-neutral-900/80 text-xs space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-300">
+            <span className="flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-indigo-400" />
+              Intake Tracker
+            </span>
+            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+              intakeState.confirmed
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+            }`}>
+              {intakeState.confirmed ? "Confirmed" : "In Progress"}
+            </span>
+          </div>
+
+          <div className="space-y-1 text-[11px]">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-neutral-400">
+                <User className="w-3 h-3 text-neutral-500" /> Name:
+              </span>
+              <span className={intakeState.name ? "text-emerald-400 font-medium truncate max-w-[100px]" : "text-neutral-500"}>
+                {intakeState.name || "Pending"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-neutral-400">
+                <Phone className="w-3 h-3 text-neutral-500" /> Phone:
+              </span>
+              <span className={intakeState.phone ? "text-emerald-400 font-medium truncate max-w-[100px]" : "text-neutral-500"}>
+                {intakeState.phone || "Pending"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-neutral-400">
+                <Mail className="w-3 h-3 text-neutral-500" /> Email:
+              </span>
+              <span className={intakeState.email ? "text-emerald-400 font-medium truncate max-w-[100px]" : "text-neutral-500"}>
+                {intakeState.email || "Pending"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-neutral-400">
+                <Calendar className="w-3 h-3 text-neutral-500" /> Appointment:
+              </span>
+              <span className={intakeState.appointment ? "text-emerald-400 font-medium truncate max-w-[100px]" : "text-neutral-500"}>
+                {intakeState.appointment ? "Scheduled" : "Pending"}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* Sessions List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 mt-1">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 px-2 py-1">
-            Recent Conversations
+            Customer Inquiries
           </div>
           {sessions.map((session) => (
             <div
@@ -644,15 +766,15 @@ export default function ChatPage() {
 
         {/* Sidebar Footer */}
         <div className="p-3 border-t border-neutral-800 text-[11px] text-neutral-500 flex items-center justify-between">
-          <span>{sessions.length} Chat{sessions.length > 1 ? "s" : ""}</span>
+          <span>{sessions.length} Session{sessions.length > 1 ? "s" : ""}</span>
           <button
             onClick={exportChat}
             disabled={messages.length === 0}
             className="flex items-center gap-1 hover:text-neutral-300 disabled:opacity-40 transition-colors"
-            title="Export conversation to Markdown"
+            title="Download Booking Confirmation (Markdown)"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export</span>
+            <span>Export Record</span>
           </button>
         </div>
       </aside>
@@ -675,15 +797,15 @@ export default function ChatPage() {
             </button>
 
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Sparkles className="w-4 h-4 text-white" />
+              <Calendar className="w-4 h-4 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-semibold text-sm sm:text-base tracking-tight text-white">
-                  Convo AI
+                  Convo Desk
                 </h1>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  v1.0
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  Intake & Booking Bot
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-neutral-400">
@@ -735,20 +857,18 @@ export default function ChatPage() {
                   ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
                   : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
               }`}
-              title="Chat Settings"
+              title="Settings"
             >
               <Sliders className="w-4 h-4" />
             </button>
 
-            {messages.length > 0 && (
-              <button
-                onClick={clearCurrentChat}
-                className="p-2 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-rose-400 hover:border-rose-500/50 transition-colors"
-                title="Clear current messages"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
+            <button
+              onClick={resetConversation}
+              className="p-2 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-rose-400 hover:border-rose-500/50 transition-colors"
+              title="Reset conversation"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
           </div>
         </header>
 
@@ -759,7 +879,7 @@ export default function ChatPage() {
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-neutral-200 flex items-center gap-2">
                   <Settings className="w-4 h-4 text-indigo-400" />
-                  Configuration & Parameters
+                  Bot Configuration
                 </h2>
                 <button
                   onClick={() => setShowSettings(false)}
@@ -769,50 +889,15 @@ export default function ChatPage() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <label className="block text-neutral-300 mb-1 font-medium">System Instructions</label>
-                  <textarea
-                    value={systemPrompt}
-                    onChange={(e) => setSystemPrompt(e.target.value)}
-                    rows={3}
-                    className="w-full bg-neutral-800 border border-neutral-700 rounded-lg p-2.5 text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-xs resize-none"
-                    placeholder="Set AI persona or behavior..."
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between text-neutral-300 mb-1 font-medium">
-                      <span>Creativity (Temperature)</span>
-                      <span className="font-mono text-indigo-400">{temperature}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      value={temperature}
-                      onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                      className="w-full accent-indigo-500 cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[10px] text-neutral-500">
-                      <span>Precise (0.0)</span>
-                      <span>Balanced (0.7)</span>
-                      <span>Creative (1.0)</span>
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-neutral-800/60 border border-neutral-700/60 text-[11px] text-neutral-400 space-y-1">
-                    <div className="flex items-center gap-1.5 font-medium text-neutral-300">
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-                      <span>API Keys Setup</span>
-                    </div>
-                    <p>
-                      Configure keys in <code className="text-neutral-200">backend/.env</code>.
-                      Mock mode works instantly out-of-the-box!
-                    </p>
-                  </div>
+              <div className="p-3 rounded-lg bg-neutral-800/60 border border-neutral-700/60 text-xs text-neutral-300 space-y-2">
+                <div className="font-semibold text-emerald-400">Strict 6-Step Workflow Active:</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-neutral-400">
+                  <div>1. 👋 Welcome Greeting</div>
+                  <div>2. 👤 Name, Phone, Email & Purpose</div>
+                  <div>3. 💬 Relevant Follow-up Questions</div>
+                  <div>4. 📅 Preferred Date & Time</div>
+                  <div>5. ✅ Structured Booking Confirmation</div>
+                  <div>6. 🛡️ Incomplete / Invalid Input Handling</div>
                 </div>
               </div>
             </div>
@@ -822,155 +907,126 @@ export default function ChatPage() {
         {/* Main Conversation Stream */}
         <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6">
           <div className="max-w-3xl mx-auto space-y-6">
-            {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center min-h-[55vh] text-center space-y-8">
-                <div className="relative">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center shadow-2xl shadow-indigo-500/30">
-                    <Bot className="w-8 h-8 text-white" />
-                  </div>
-                  <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-neutral-950 flex items-center justify-center">
-                    <Sparkles className="w-2.5 h-2.5 text-white" />
-                  </div>
+            {/* Quick Inquiry Suggestion Chips (when only initial greeting is present) */}
+            {messages.length === 1 && (
+              <div className="space-y-2 pt-2">
+                <div className="text-xs text-neutral-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Example customer enquiry starters:</span>
                 </div>
-
-                <div className="space-y-2 max-w-md">
-                  <h2 className="text-2xl font-bold tracking-tight text-white">
-                    Welcome to Convo AI
-                  </h2>
-                  <p className="text-sm text-neutral-400">
-                    A high-performance conversational assistant with streaming, voice support, persistent history, and code execution blocks.
-                  </p>
-                </div>
-
-                {/* Quick Prompt Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-xl text-left">
-                  {SUGGESTIONS.map((item, idx) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {QUICK_INQUIRIES.map((prompt, idx) => (
                     <button
                       key={idx}
-                      onClick={() => handleSend(item.prompt)}
-                      className="p-3.5 rounded-xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-850 hover:border-neutral-700 transition-all text-left group"
+                      onClick={() => handleSend(prompt)}
+                      className="text-left text-xs p-2.5 rounded-lg border border-neutral-800 bg-neutral-900/80 hover:bg-neutral-850 hover:border-indigo-500/50 text-neutral-300 transition-all"
                     >
-                      <div className="font-medium text-sm text-neutral-200 group-hover:text-indigo-400 transition-colors">
-                        {item.title}
-                      </div>
-                      <div className="text-xs text-neutral-400 mt-1 line-clamp-1">
-                        {item.desc}
-                      </div>
+                      {prompt}
                     </button>
                   ))}
                 </div>
               </div>
-            ) : (
-              messages.map((message) => (
+            )}
+
+            {/* Conversation Messages */}
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex gap-3 sm:gap-4 ${
+                  message.role === "user" ? "justify-end" : "justify-start"
+                }`}
+              >
+                {message.role === "assistant" && (
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shrink-0 mt-1 shadow-sm">
+                    <Bot className="w-4 h-4 text-white" />
+                  </div>
+                )}
+
                 <div
-                  key={message.id}
-                  className={`flex gap-3 sm:gap-4 ${
-                    message.role === "user" ? "justify-end" : "justify-start"
+                  className={`flex flex-col space-y-1.5 max-w-[85%] sm:max-w-[78%] ${
+                    message.role === "user" ? "items-end" : "items-start"
                   }`}
                 >
-                  {message.role === "assistant" && (
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shrink-0 mt-1 shadow-sm">
-                      <Bot className="w-4 h-4 text-white" />
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 px-1 text-[11px] text-neutral-400">
+                    <span className="font-medium">
+                      {message.role === "user" ? "Customer" : "Convo Desk"}
+                    </span>
+                    <span>•</span>
+                    <span>{message.timestamp}</span>
+                  </div>
 
                   <div
-                    className={`flex flex-col space-y-1.5 max-w-[85%] sm:max-w-[78%] ${
-                      message.role === "user" ? "items-end" : "items-start"
+                    className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-all ${
+                      message.role === "user"
+                        ? "bg-indigo-600 text-white rounded-tr-sm"
+                        : "bg-neutral-900 border border-neutral-800 text-neutral-200 rounded-tl-sm w-full"
                     }`}
                   >
-                    {/* Meta Bar */}
-                    <div className="flex items-center gap-2 px-1 text-[11px] text-neutral-400">
-                      <span className="font-medium">
-                        {message.role === "user" ? "You" : "Convo AI"}
-                      </span>
-                      <span>•</span>
-                      <span>{message.timestamp}</span>
-                      {message.role === "assistant" && message.model && (
-                        <>
-                          <span>•</span>
-                          <span className="text-[10px] font-mono uppercase bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded">
-                            {message.model}
-                          </span>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Message Bubble */}
-                    <div
-                      className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-all ${
-                        message.role === "user"
-                          ? "bg-indigo-600 text-white rounded-tr-sm"
-                          : "bg-neutral-900 border border-neutral-800 text-neutral-200 rounded-tl-sm w-full"
-                      }`}
-                    >
-                      {message.content ? (
-                        renderMessageContent(message.content, message.id)
-                      ) : message.isStreaming ? (
-                        <div className="flex items-center gap-1.5 py-1">
-                          <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" />
-                          <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.2s]" />
-                          <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.4s]" />
-                        </div>
-                      ) : null}
-
-                      {message.isStreaming && message.content && (
-                        <span className="inline-block w-2 h-4 ml-1 bg-indigo-400 animate-pulse align-middle" />
-                      )}
-                    </div>
-
-                    {/* Bubble Action Footer */}
-                    {message.role === "assistant" && message.content && !message.isStreaming && (
-                      <div className="flex items-center gap-3 pt-1 px-1 text-xs text-neutral-500">
-                        <button
-                          onClick={() => handleCopy(message.content, message.id)}
-                          className="hover:text-neutral-300 transition-colors flex items-center gap-1"
-                          title="Copy message"
-                        >
-                          {copiedId === message.id ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              <span className="text-emerald-400 text-xs">Copied</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copy</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          onClick={() => toggleSpeech(message.content, message.id)}
-                          className={`hover:text-neutral-300 transition-colors flex items-center gap-1 ${
-                            speakingMessageId === message.id ? "text-indigo-400" : ""
-                          }`}
-                          title="Read out loud"
-                        >
-                          {speakingMessageId === message.id ? (
-                            <>
-                              <VolumeX className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                              <span className="text-indigo-400 text-xs">Stop Audio</span>
-                            </>
-                          ) : (
-                            <>
-                              <Volume2 className="w-3.5 h-3.5" />
-                              <span>Listen</span>
-                            </>
-                          )}
-                        </button>
+                    {message.content ? (
+                      renderMessageContent(message.content, message.id)
+                    ) : message.isStreaming ? (
+                      <div className="flex items-center gap-1.5 py-1">
+                        <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" />
+                        <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.2s]" />
+                        <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.4s]" />
                       </div>
+                    ) : null}
+
+                    {message.isStreaming && message.content && (
+                      <span className="inline-block w-2 h-4 ml-1 bg-indigo-400 animate-pulse align-middle" />
                     )}
                   </div>
 
-                  {message.role === "user" && (
-                    <div className="w-8 h-8 rounded-lg bg-neutral-800 border border-neutral-700 flex items-center justify-center shrink-0 mt-1 shadow-sm">
-                      <User className="w-4 h-4 text-neutral-300" />
+                  {message.role === "assistant" && message.content && !message.isStreaming && (
+                    <div className="flex items-center gap-3 pt-1 px-1 text-xs text-neutral-500">
+                      <button
+                        onClick={() => handleCopy(message.content, message.id)}
+                        className="hover:text-neutral-300 transition-colors flex items-center gap-1"
+                        title="Copy message"
+                      >
+                        {copiedId === message.id ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-emerald-400 text-xs">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => toggleSpeech(message.content, message.id)}
+                        className={`hover:text-neutral-300 transition-colors flex items-center gap-1 ${
+                          speakingMessageId === message.id ? "text-indigo-400" : ""
+                        }`}
+                        title="Listen to response"
+                      >
+                        {speakingMessageId === message.id ? (
+                          <>
+                            <VolumeX className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                            <span className="text-indigo-400 text-xs">Stop Audio</span>
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="w-3.5 h-3.5" />
+                            <span>Listen</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
                 </div>
-              ))
-            )}
+
+                {message.role === "user" && (
+                  <div className="w-8 h-8 rounded-lg bg-neutral-800 border border-neutral-700 flex items-center justify-center shrink-0 mt-1 shadow-sm">
+                    <User className="w-4 h-4 text-neutral-300" />
+                  </div>
+                )}
+              </div>
+            ))}
             <div ref={messagesEndRef} />
           </div>
         </main>
@@ -988,7 +1044,7 @@ export default function ChatPage() {
                   e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask anything or request code..."
+                placeholder="Enter your name, contact info, enquiry, or preferred date & time..."
                 rows={1}
                 className="flex-1 bg-transparent border-0 resize-none px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none max-h-44"
               />
@@ -1005,17 +1061,6 @@ export default function ChatPage() {
               >
                 {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </button>
-
-              {/* Regenerate Last */}
-              {messages.length > 0 && !isGenerating && (
-                <button
-                  onClick={handleRegenerate}
-                  className="p-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-200 transition-all shadow-sm shrink-0"
-                  title="Regenerate last response"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              )}
 
               {/* Send / Stop */}
               {isGenerating ? (
@@ -1041,10 +1086,10 @@ export default function ChatPage() {
 
             <div className="flex items-center justify-between px-2 text-[11px] text-neutral-500">
               <span>
-                Press <kbd className="px-1 py-0.5 rounded bg-neutral-800 text-neutral-400 font-mono text-[10px]">Enter</kbd> to send, <kbd className="px-1 py-0.5 rounded bg-neutral-800 text-neutral-400 font-mono text-[10px]">Shift+Enter</kbd> for newline
+                Workflow: <strong>Welcome → Details & Follow-up → Scheduling → Confirmation</strong>
               </span>
               <span className="hidden sm:inline">
-                Real-time SSE Streaming
+                Real-time Intake Assistant
               </span>
             </div>
           </div>
