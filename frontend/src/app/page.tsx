@@ -30,8 +30,9 @@ import {
   Clock,
   Phone,
   Mail,
-  HelpCircle,
   FileText,
+  CalendarPlus,
+  ExternalLink,
 } from "lucide-react";
 
 interface Message {
@@ -51,6 +52,7 @@ interface IntakeState {
   purpose: string | null;
   appointment: string | null;
   confirmed: boolean;
+  step: number; // 1 to 4
 }
 
 interface ChatSession {
@@ -85,13 +87,6 @@ const DEFAULT_MODELS: ModelInfo[] = [
     description: "Fast, high-efficiency Mistral AI reasoning model.",
   },
   {
-    id: "mistral-large-latest",
-    name: "Mistral Large 2",
-    provider: "mistral",
-    is_available: false,
-    description: "Mistral AI flagship frontier model for complex customer workflows.",
-  },
-  {
     id: "gemini-2.5-flash",
     name: "Gemini 2.5 Flash",
     provider: "gemini",
@@ -107,16 +102,23 @@ const DEFAULT_MODELS: ModelInfo[] = [
   },
 ];
 
-const INITIAL_WELCOME_TEXT = 
+const INITIAL_WELCOME_TEXT =
   "👋 **Hello and welcome!**\n\n" +
   "I'm **Convo Desk**, your virtual customer service and scheduling assistant.\n\n" +
-  "To assist you properly and schedule an appointment with our specialist, may I have your **full name** and the **purpose of your enquiry** today?";
+  "To get started and schedule an appointment with our specialist, may I have your **full name** and the **purpose of your enquiry** today?";
 
 const QUICK_INQUIRIES = [
   "Hi, I'm Sarah Jenkins. I want to schedule a product demo for my team.",
   "Hello, my name is David Miller. I need a technical consultation on cloud migration.",
   "Hi, I am Emily Zhang. I'd like to inquire about enterprise pricing & contracts.",
   "Hello! I am Mark Davis and I want to book a support consultation.",
+];
+
+const QUICK_TIME_SLOTS = [
+  "Tomorrow at 10:00 AM",
+  "Tomorrow at 2:30 PM",
+  "Friday at 11:00 AM",
+  "Next Monday at 3:00 PM",
 ];
 
 export default function ChatPage() {
@@ -142,7 +144,6 @@ export default function ChatPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const speechRecognitionRef = useRef<any>(null);
 
-  // Helper to create an initial session with the official Welcome Message (Req 1)
   const createFreshSession = (): ChatSession => ({
     id: "session-" + Date.now(),
     title: "New Customer Enquiry",
@@ -161,10 +162,10 @@ export default function ChatPage() {
     ],
   });
 
-  // Load sessions from localStorage on mount
+  // Load sessions from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("convo_intake_sessions");
+      const saved = localStorage.getItem("convo_desk_sessions");
       if (saved) {
         const parsed: ChatSession[] = JSON.parse(saved);
         if (parsed.length > 0) {
@@ -175,7 +176,7 @@ export default function ChatPage() {
         }
       }
     } catch (e) {
-      console.warn("Failed to load sessions from storage:", e);
+      console.warn("Storage load error:", e);
     }
     const fresh = createFreshSession();
     setSessions([fresh]);
@@ -185,11 +186,10 @@ export default function ChatPage() {
   // Save sessions to localStorage
   useEffect(() => {
     if (sessions.length > 0) {
-      localStorage.setItem("convo_intake_sessions", JSON.stringify(sessions));
+      localStorage.setItem("convo_desk_sessions", JSON.stringify(sessions));
     }
   }, [sessions]);
 
-  // Current active session
   const currentSession = sessions.find((s) => s.id === activeSessionId) || {
     id: "temp",
     title: "New Customer Enquiry",
@@ -210,7 +210,7 @@ export default function ChatPage() {
 
   const messages = currentSession.messages;
 
-  // Extract client-side intake progress to give user clear live feedback
+  // Compute Intake Progress
   const computeIntakeProgress = (): IntakeState => {
     const textAll = messages.map((m) => m.content).join(" ");
     const userMsgs = messages.filter((m) => m.role === "user");
@@ -239,6 +239,11 @@ export default function ChatPage() {
       appointmentTime = userMsgs[userMsgs.length - 1].content;
     }
 
+    let step = 1;
+    if (confirmed) step = 4;
+    else if (emailMatch || phoneMatch) step = 3;
+    else if (userMsgs.length > 0) step = 2;
+
     return {
       name: detectedName,
       phone: phoneMatch ? phoneMatch[0] : null,
@@ -246,6 +251,7 @@ export default function ChatPage() {
       purpose: detectedPurpose,
       appointment: appointmentTime,
       confirmed: confirmed,
+      step: step,
     };
   };
 
@@ -292,15 +298,13 @@ export default function ChatPage() {
       prev.map((session) => {
         if (session.id === activeSessionId) {
           const updated = typeof newMessages === "function" ? newMessages(session.messages) : newMessages;
-          
           let title = session.title;
           if (title === "New Customer Enquiry" && updated.length > 1) {
             const firstUserMsg = updated.find((m) => m.role === "user");
             if (firstUserMsg) {
-              title = firstUserMsg.content.slice(0, 28) + (firstUserMsg.content.length > 28 ? "..." : "");
+              title = firstUserMsg.content.slice(0, 26) + (firstUserMsg.content.length > 26 ? "..." : "");
             }
           }
-
           return { ...session, messages: updated, title };
         }
         return session;
@@ -318,7 +322,6 @@ export default function ChatPage() {
   const deleteSession = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (isGenerating && activeSessionId === id) handleStop();
-    
     const remaining = sessions.filter((s) => s.id !== id);
     if (remaining.length === 0) {
       const fresh = createFreshSession();
@@ -370,13 +373,11 @@ export default function ChatPage() {
       alert("Text-to-speech is not supported by your browser.");
       return;
     }
-
     if (speakingMessageId === messageId) {
       window.speechSynthesis.cancel();
       setSpeakingMessageId(null);
       return;
     }
-
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text.replace(/```[\s\S]*?```/g, "Code omitted.").replace(/\|/g, " "));
     utterance.rate = 1.05;
@@ -389,26 +390,22 @@ export default function ChatPage() {
   // Speech to Text
   const toggleRecording = () => {
     if (typeof window === "undefined") return;
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
+      alert("Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.");
       return;
     }
-
     if (isRecording) {
       if (speechRecognitionRef.current) speechRecognitionRef.current.stop();
       setIsRecording(false);
       return;
     }
-
     try {
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = "en-US";
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recognition.onresult = (event: any) => {
         let transcript = "";
@@ -417,10 +414,8 @@ export default function ChatPage() {
         }
         setInput(transcript);
       };
-
       recognition.onerror = () => setIsRecording(false);
       recognition.onend = () => setIsRecording(false);
-
       speechRecognitionRef.current = recognition;
       recognition.start();
       setIsRecording(true);
@@ -443,6 +438,13 @@ export default function ChatPage() {
     link.download = `Intake_Confirmation_${currentSession.id}.md`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Generate Google Calendar Link
+  const createGoogleCalendarLink = (timeStr: string, name: string) => {
+    const title = encodeURIComponent(`Consultation: ${name || "Customer"}`);
+    const details = encodeURIComponent("Customer intake & consultation scheduled via Convo Desk.");
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}`;
   };
 
   // Send message
@@ -492,9 +494,7 @@ export default function ChatPage() {
     try {
       const response = await fetch("http://localhost:8000/api/chat/stream", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           provider: provider,
@@ -504,13 +504,8 @@ export default function ChatPage() {
         signal: abortController.signal,
       });
 
-      if (!response.ok) {
-        throw new Error(`Server returned error ${response.status}`);
-      }
-
-      if (!response.body) {
-        throw new Error("No response body received from server.");
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.body) throw new Error("No response body");
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -556,7 +551,7 @@ export default function ChatPage() {
                 );
               }
             } catch (err) {
-              console.error("Error parsing SSE JSON chunk:", err);
+              console.error("SSE parse error:", err);
             }
           }
         }
@@ -573,7 +568,7 @@ export default function ChatPage() {
                   ...msg,
                   content:
                     msg.content +
-                    `\n\n⚠️ *Connection Error: Failed to reach backend API at http://localhost:8000.*`,
+                    `\n\n⚠️ *Connection Error: Could not reach backend server at http://localhost:8000.*`,
                   isStreaming: false,
                 }
               : msg
@@ -593,62 +588,97 @@ export default function ChatPage() {
     }
   };
 
-  // Render markdown and tables cleanly
+  // Modern Card Rendering for Confirmation
   const renderMessageContent = (content: string, id: string) => {
-    // If it contains a markdown table (e.g. Booking Confirmation)
+    // Check if it's the confirmation card
     if (content.includes("| :--- |") || content.includes("| Field |")) {
       const lines = content.split("\n");
-      const tableRows: string[][] = [];
+      const rows: { label: string; value: string }[] = [];
+      const introText: string[] = [];
+      const outroText: string[] = [];
       let inTable = false;
-      const nonTableBefore: string[] = [];
-      const nonTableAfter: string[] = [];
 
       lines.forEach((line) => {
         if (line.trim().startsWith("|")) {
           inTable = true;
-          if (!line.includes(":---")) {
-            const cols = line.split("|").slice(1, -1).map((c) => c.trim());
-            tableRows.push(cols);
+          if (!line.includes(":---") && !line.toLowerCase().includes("| field |")) {
+            const parts = line.split("|").slice(1, -1).map((s) => s.trim().replace(/\*\*/g, ""));
+            if (parts.length >= 2) {
+              rows.push({ label: parts[0], value: parts[1] });
+            }
           }
         } else {
-          if (!inTable) nonTableBefore.push(line);
-          else nonTableAfter.push(line);
+          if (!inTable) introText.push(line);
+          else outroText.push(line);
         }
       });
 
+      const appointmentVal = rows.find((r) => r.label.toLowerCase().includes("date"))?.value || "Scheduled Date";
+      const nameVal = rows.find((r) => r.label.toLowerCase().includes("name"))?.value || "Customer";
+
       return (
-        <div className="space-y-3">
-          {nonTableBefore.length > 0 && (
-            <div className="whitespace-pre-wrap">{nonTableBefore.join("\n")}</div>
-          )}
-          {tableRows.length > 0 && (
-            <div className="overflow-x-auto my-3 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 shadow-md">
-              <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-emerald-400">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Verified Appointment Record</span>
-              </div>
-              <table className="w-full text-xs text-left border-collapse">
-                <tbody>
-                  {tableRows.map((row, rIdx) => (
-                    <tr
-                      key={rIdx}
-                      className={rIdx % 2 === 0 ? "bg-neutral-900/60" : "bg-neutral-850/60"}
-                    >
-                      <td className="p-2 font-medium text-neutral-300 border-b border-neutral-800/80 w-1/3">
-                        {row[0]?.replace(/\*\*/g, "")}
-                      </td>
-                      <td className="p-2 font-semibold text-neutral-100 border-b border-neutral-800/80">
-                        {row[1]?.replace(/\*\*/g, "")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <div className="space-y-4">
+          {introText.length > 0 && (
+            <div className="text-slate-200 leading-relaxed whitespace-pre-wrap font-medium">
+              {introText.join("\n")}
             </div>
           )}
-          {nonTableAfter.length > 0 && (
-            <div className="whitespace-pre-wrap text-neutral-300 italic text-xs">
-              {nonTableAfter.join("\n")}
+
+          {/* Sleek Appointment Card */}
+          <div className="overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950/20 shadow-xl p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-white tracking-tight">Appointment Confirmed</h4>
+                  <p className="text-[11px] text-slate-400">Official Scheduling Receipt</p>
+                </div>
+              </div>
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                Confirmed
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              {rows.map((row, idx) => (
+                <div key={idx} className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-2.5">
+                  <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-0.5">
+                    {row.label}
+                  </div>
+                  <div className="text-white font-medium text-xs break-words">
+                    {row.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-2 flex flex-wrap gap-2">
+              <a
+                href={createGoogleCalendarLink(appointmentVal, nameVal)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors shadow-sm"
+              >
+                <CalendarPlus className="w-3.5 h-3.5" />
+                <span>Add to Google Calendar</span>
+                <ExternalLink className="w-3 h-3 opacity-70" />
+              </a>
+
+              <button
+                onClick={exportChat}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Receipt</span>
+              </button>
+            </div>
+          </div>
+
+          {outroText.length > 0 && (
+            <div className="text-xs text-slate-400 italic whitespace-pre-wrap leading-relaxed">
+              {outroText.join("\n")}
             </div>
           )}
         </div>
@@ -658,97 +688,68 @@ export default function ChatPage() {
     // Standard markdown rendering
     const renderedLines = content.split("\n").map((line, lIdx) => {
       const isBullet = line.trim().startsWith("- ") || line.trim().startsWith("* ");
-      const formatted = line.replace(/(\*\*|__)(.*?)\1/g, "<strong>$2</strong>");
+      const formatted = line.replace(/(\*\*|__)(.*?)\1/g, "<strong class='font-semibold text-white'>$2</strong>");
 
       return (
         <span
           key={lIdx}
-          className={`block ${isBullet ? "pl-4 before:content-['•'] before:inline-block before:w-3 before:-ml-4 before:text-neutral-400" : ""}`}
+          className={`block ${isBullet ? "pl-4 before:content-['•'] before:inline-block before:w-3 before:-ml-4 before:text-indigo-400" : ""}`}
           dangerouslySetInnerHTML={{ __html: formatted || "&nbsp;" }}
         />
       );
     });
 
-    return <div className="space-y-1">{renderedLines}</div>;
+    return <div className="space-y-1.5 leading-relaxed text-slate-200 text-sm">{renderedLines}</div>;
   };
 
   return (
-    <div className="flex h-screen bg-neutral-950 text-neutral-100 font-sans selection:bg-indigo-600 selection:text-white overflow-hidden">
-      {/* Sidebar for Sessions */}
+    <div className="flex h-screen bg-[#0d0f15] text-slate-100 font-sans antialiased overflow-hidden selection:bg-indigo-600 selection:text-white">
+      {/* Sleek Left Sidebar */}
       <aside
         className={`${
-          sidebarOpen ? "w-72" : "w-0"
-        } transition-all duration-300 ease-in-out border-r border-neutral-800 bg-neutral-925 flex flex-col shrink-0 overflow-hidden relative z-30`}
+          sidebarOpen ? "w-64 sm:w-72" : "w-0"
+        } transition-all duration-300 ease-in-out border-r border-slate-800/80 bg-[#12151e] flex flex-col shrink-0 overflow-hidden relative z-30`}
       >
-        <div className="p-3 border-b border-neutral-800 flex items-center justify-between">
+        {/* Sidebar Header */}
+        <div className="p-4 border-b border-slate-800/80">
           <button
             onClick={createNewSession}
-            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium py-2.5 px-3 rounded-lg shadow-sm transition-all"
+            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.01] active:scale-[0.99]"
           >
             <Plus className="w-4 h-4" />
             <span>New Customer Chat</span>
           </button>
         </div>
 
-        {/* Live Requirement Checklist Widget */}
-        <div className="p-3 mx-2 mt-2 rounded-xl border border-neutral-800 bg-neutral-900/80 text-xs space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-300">
-            <span className="flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-indigo-400" />
-              Intake Tracker
-            </span>
-            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-              intakeState.confirmed
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-            }`}>
-              {intakeState.confirmed ? "Confirmed" : "In Progress"}
+        {/* Minimalist Visual Progress Tracker */}
+        <div className="px-4 py-3 border-b border-slate-800/60 bg-slate-900/40">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300 mb-2">
+            <span>Intake Workflow</span>
+            <span className="text-[10px] text-indigo-400 font-mono">
+              Step {intakeState.step} of 4
             </span>
           </div>
 
-          <div className="space-y-1 text-[11px]">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-neutral-400">
-                <User className="w-3 h-3 text-neutral-500" /> Name:
-              </span>
-              <span className={intakeState.name ? "text-emerald-400 font-medium truncate max-w-[100px]" : "text-neutral-500"}>
-                {intakeState.name || "Pending"}
-              </span>
-            </div>
+          {/* Progress Bar */}
+          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex mb-2.5">
+            <div
+              className="h-full bg-indigo-500 transition-all duration-500 ease-out"
+              style={{ width: `${(intakeState.step / 4) * 100}%` }}
+            />
+          </div>
 
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-neutral-400">
-                <Phone className="w-3 h-3 text-neutral-500" /> Phone:
-              </span>
-              <span className={intakeState.phone ? "text-emerald-400 font-medium truncate max-w-[100px]" : "text-neutral-500"}>
-                {intakeState.phone || "Pending"}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-neutral-400">
-                <Mail className="w-3 h-3 text-neutral-500" /> Email:
-              </span>
-              <span className={intakeState.email ? "text-emerald-400 font-medium truncate max-w-[100px]" : "text-neutral-500"}>
-                {intakeState.email || "Pending"}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-neutral-400">
-                <Calendar className="w-3 h-3 text-neutral-500" /> Appointment:
-              </span>
-              <span className={intakeState.appointment ? "text-emerald-400 font-medium truncate max-w-[100px]" : "text-neutral-500"}>
-                {intakeState.appointment ? "Scheduled" : "Pending"}
-              </span>
-            </div>
+          <div className="grid grid-cols-4 text-center text-[9px] font-medium text-slate-500">
+            <span className={intakeState.step >= 1 ? "text-indigo-400" : ""}>Welcome</span>
+            <span className={intakeState.step >= 2 ? "text-indigo-400" : ""}>Details</span>
+            <span className={intakeState.step >= 3 ? "text-indigo-400" : ""}>Schedule</span>
+            <span className={intakeState.step >= 4 ? "text-emerald-400" : ""}>Confirmed</span>
           </div>
         </div>
 
-        {/* Sessions List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1 mt-1">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 px-2 py-1">
-            Customer Inquiries
+        {/* Recent Conversations List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 px-2 py-1.5">
+            Past Conversations
           </div>
           {sessions.map((session) => (
             <div
@@ -757,19 +758,19 @@ export default function ChatPage() {
                 if (isGenerating) handleStop();
                 setActiveSessionId(session.id);
               }}
-              className={`group flex items-center justify-between p-2 rounded-lg text-xs cursor-pointer transition-colors ${
+              className={`group flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all ${
                 session.id === activeSessionId
-                  ? "bg-neutral-800 text-white font-medium"
-                  : "text-neutral-400 hover:bg-neutral-850 hover:text-neutral-200"
+                  ? "bg-slate-800 text-white font-medium shadow-sm"
+                  : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
               }`}
             >
-              <div className="flex items-center gap-2 truncate mr-1">
-                <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-60" />
+              <div className="flex items-center gap-2.5 truncate mr-1">
+                <MessageSquare className="w-3.5 h-3.5 shrink-0 text-slate-500 group-hover:text-indigo-400 transition-colors" />
                 <span className="truncate">{session.title}</span>
               </div>
               <button
                 onClick={(e) => deleteSession(session.id, e)}
-                className="opacity-0 group-hover:opacity-100 hover:text-rose-400 p-1 rounded transition-opacity"
+                className="opacity-0 group-hover:opacity-100 hover:text-rose-400 p-1 rounded-md transition-opacity"
                 title="Delete session"
               >
                 <Trash2 className="w-3 h-3" />
@@ -779,70 +780,68 @@ export default function ChatPage() {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-neutral-800 text-[11px] text-neutral-500 flex items-center justify-between">
-          <span>{sessions.length} Session{sessions.length > 1 ? "s" : ""}</span>
+        <div className="p-3.5 border-t border-slate-800/80 bg-slate-900/30 text-[11px] text-slate-400 flex items-center justify-between">
+          <span>{sessions.length} Chat{sessions.length > 1 ? "s" : ""}</span>
           <button
             onClick={exportChat}
             disabled={messages.length === 0}
-            className="flex items-center gap-1 hover:text-neutral-300 disabled:opacity-40 transition-colors"
-            title="Download Booking Confirmation (Markdown)"
+            className="flex items-center gap-1.5 hover:text-slate-200 disabled:opacity-40 transition-colors"
+            title="Download Transcript"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export Record</span>
+            <span>Export</span>
           </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Top Navbar */}
-        <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-neutral-800 bg-neutral-900/60 backdrop-blur-md sticky top-0 z-20">
+      {/* Main Chat Interface */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0d0f15]">
+        {/* Clean Modern Navbar */}
+        <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-800/80 bg-[#12151e]/80 backdrop-blur-md sticky top-0 z-20">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
             >
-              {sidebarOpen ? (
-                <PanelLeftClose className="w-5 h-5" />
-              ) : (
-                <PanelLeftOpen className="w-5 h-5" />
-              )}
+              {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
             </button>
 
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Calendar className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-semibold text-sm sm:text-base tracking-tight text-white">
-                  Convo Desk
-                </h1>
-                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Intake & Booking Bot
-                </span>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-md shadow-indigo-500/20">
+                <Calendar className="w-4 h-4 text-white" />
               </div>
-              <div className="flex items-center gap-2 text-[11px] text-neutral-400">
-                <span className="flex items-center gap-1.5">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      backendStatus === "online"
-                        ? "bg-emerald-400 animate-pulse"
-                        : backendStatus === "checking"
-                        ? "bg-amber-400"
-                        : "bg-rose-500"
-                    }`}
-                  />
-                  <span className="capitalize">{backendStatus}</span>
-                </span>
-                <span>•</span>
-                <button
-                  onClick={checkBackendHealth}
-                  className="hover:text-neutral-200 transition-colors flex items-center gap-1"
-                  title="Refresh backend status"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                </button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="font-semibold text-sm sm:text-base tracking-tight text-white">
+                    Convo Desk
+                  </h1>
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Live Assistant
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        backendStatus === "online"
+                          ? "bg-emerald-400"
+                          : backendStatus === "checking"
+                          ? "bg-amber-400"
+                          : "bg-rose-500"
+                      }`}
+                    />
+                    <span className="capitalize">{backendStatus}</span>
+                  </span>
+                  <span>•</span>
+                  <button
+                    onClick={checkBackendHealth}
+                    className="hover:text-slate-200 transition-colors flex items-center gap-1"
+                    title="Refresh backend status"
+                  >
+                    <RefreshCw className="w-2.5 h-2.5" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -853,7 +852,7 @@ export default function ChatPage() {
               <select
                 value={activeModel}
                 onChange={(e) => setActiveModel(e.target.value)}
-                className="appearance-none bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs rounded-lg pl-3 pr-8 py-2 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer hover:bg-neutral-750 transition-colors"
+                className="appearance-none bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl pl-3 pr-8 py-2 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer hover:bg-slate-750 transition-colors"
               >
                 {availableModels.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -861,15 +860,15 @@ export default function ChatPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-3.5 h-3.5 text-neutral-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
 
             <button
               onClick={() => setShowSettings(!showSettings)}
-              className={`p-2 rounded-lg border transition-colors ${
+              className={`p-2 rounded-xl border transition-colors ${
                 showSettings
                   ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                  : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                  : "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
               }`}
               title="Settings"
             >
@@ -878,7 +877,7 @@ export default function ChatPage() {
 
             <button
               onClick={resetConversation}
-              className="p-2 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-rose-400 hover:border-rose-500/50 transition-colors"
+              className="p-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:text-rose-400 hover:border-rose-500/50 transition-colors"
               title="Reset conversation"
             >
               <RotateCcw className="w-4 h-4" />
@@ -886,54 +885,54 @@ export default function ChatPage() {
           </div>
         </header>
 
-        {/* Settings Drawer */}
+        {/* Settings Panel */}
         {showSettings && (
-          <div className="border-b border-neutral-800 bg-neutral-900/95 px-4 sm:px-6 py-4 transition-all">
-            <div className="max-w-3xl mx-auto space-y-4">
+          <div className="border-b border-slate-800 bg-slate-900/95 px-6 py-4 transition-all">
+            <div className="max-w-2xl mx-auto space-y-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-neutral-200 flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-xs font-semibold text-slate-200 flex items-center gap-2">
+                  <Settings className="w-3.5 h-3.5 text-indigo-400" />
                   Bot Configuration
-                </h2>
+                </h3>
                 <button
                   onClick={() => setShowSettings(false)}
-                  className="text-xs text-neutral-400 hover:text-white"
+                  className="text-xs text-slate-400 hover:text-white"
                 >
                   Close
                 </button>
               </div>
 
-              <div className="p-3 rounded-lg bg-neutral-800/60 border border-neutral-700/60 text-xs text-neutral-300 space-y-2">
-                <div className="font-semibold text-emerald-400">Strict 6-Step Workflow Active:</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-neutral-400">
-                  <div>1. 👋 Welcome Greeting</div>
-                  <div>2. 👤 Name, Phone, Email & Purpose</div>
-                  <div>3. 💬 Relevant Follow-up Questions</div>
+              <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60 text-xs text-slate-300 space-y-1.5">
+                <div className="font-semibold text-emerald-400">Strict 6-Step Workflow:</div>
+                <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-400">
+                  <div>1. 👋 Customer Welcome Greeting</div>
+                  <div>2. 👤 Name, Contact, Email & Purpose</div>
+                  <div>3. 💬 Contextual Follow-up Questions</div>
                   <div>4. 📅 Preferred Date & Time</div>
                   <div>5. ✅ Structured Booking Confirmation</div>
-                  <div>6. 🛡️ Incomplete / Invalid Input Handling</div>
+                  <div>6. 🛡️ Robust Validation & Error Handling</div>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Main Conversation Stream */}
+        {/* Conversation Stream */}
         <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6">
-          <div className="max-w-3xl mx-auto space-y-6">
-            {/* Quick Inquiry Suggestion Chips (when only initial greeting is present) */}
+          <div className="max-w-2xl mx-auto space-y-6">
+            {/* Quick Suggestion Chips (when only initial greeting is displayed) */}
             {messages.length === 1 && (
-              <div className="space-y-2 pt-2">
-                <div className="text-xs text-neutral-400 flex items-center gap-1.5">
+              <div className="space-y-2.5 pt-1">
+                <div className="text-xs text-slate-400 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Example customer enquiry starters:</span>
+                  <span>Tap an example enquiry to begin:</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {QUICK_INQUIRIES.map((prompt, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSend(prompt)}
-                      className="text-left text-xs p-2.5 rounded-lg border border-neutral-800 bg-neutral-900/80 hover:bg-neutral-850 hover:border-indigo-500/50 text-neutral-300 transition-all"
+                      className="text-left text-xs p-3 rounded-xl border border-slate-800/90 bg-[#161924] hover:bg-[#1c2030] hover:border-indigo-500/50 text-slate-200 transition-all shadow-sm"
                     >
                       {prompt}
                     </button>
@@ -942,7 +941,28 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Conversation Messages */}
+            {/* Quick Time Slot Chips (when assistant is asking for date and time) */}
+            {intakeState.step === 3 && !intakeState.confirmed && (
+              <div className="p-3 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 space-y-2">
+                <div className="text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Quick Appointment Time Slots:</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_TIME_SLOTS.map((slot, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSend(slot)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors shadow-sm"
+                    >
+                      {slot}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Messages */}
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -951,29 +971,30 @@ export default function ChatPage() {
                 }`}
               >
                 {message.role === "assistant" && (
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shrink-0 mt-1 shadow-sm">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shrink-0 mt-1 shadow-md shadow-indigo-600/10">
                     <Bot className="w-4 h-4 text-white" />
                   </div>
                 )}
 
                 <div
-                  className={`flex flex-col space-y-1.5 max-w-[85%] sm:max-w-[78%] ${
+                  className={`flex flex-col space-y-1.5 max-w-[85%] sm:max-w-[82%] ${
                     message.role === "user" ? "items-end" : "items-start"
                   }`}
                 >
-                  <div className="flex items-center gap-2 px-1 text-[11px] text-neutral-400">
-                    <span className="font-medium">
+                  <div className="flex items-center gap-2 px-1 text-[11px] text-slate-400">
+                    <span className="font-medium text-slate-300">
                       {message.role === "user" ? "Customer" : "Convo Desk"}
                     </span>
                     <span>•</span>
                     <span>{message.timestamp}</span>
                   </div>
 
+                  {/* Message Bubble */}
                   <div
-                    className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-all ${
+                    className={`rounded-2xl px-4 py-3.5 shadow-sm transition-all ${
                       message.role === "user"
                         ? "bg-indigo-600 text-white rounded-tr-sm"
-                        : "bg-neutral-900 border border-neutral-800 text-neutral-200 rounded-tl-sm w-full"
+                        : "bg-[#161a25] border border-slate-800 text-slate-200 rounded-tl-sm w-full"
                     }`}
                   >
                     {message.content ? (
@@ -991,21 +1012,22 @@ export default function ChatPage() {
                     )}
                   </div>
 
+                  {/* Footer actions for assistant */}
                   {message.role === "assistant" && message.content && !message.isStreaming && (
-                    <div className="flex items-center gap-3 pt-1 px-1 text-xs text-neutral-500">
+                    <div className="flex items-center gap-3 pt-1 px-1 text-xs text-slate-500">
                       <button
                         onClick={() => handleCopy(message.content, message.id)}
-                        className="hover:text-neutral-300 transition-colors flex items-center gap-1"
-                        title="Copy message"
+                        className="hover:text-slate-300 transition-colors flex items-center gap-1"
+                        title="Copy text"
                       >
                         {copiedId === message.id ? (
                           <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <Check className="w-3 h-3 text-emerald-400" />
                             <span className="text-emerald-400 text-xs">Copied</span>
                           </>
                         ) : (
                           <>
-                            <Copy className="w-3.5 h-3.5" />
+                            <Copy className="w-3 h-3" />
                             <span>Copy</span>
                           </>
                         )}
@@ -1013,19 +1035,19 @@ export default function ChatPage() {
 
                       <button
                         onClick={() => toggleSpeech(message.content, message.id)}
-                        className={`hover:text-neutral-300 transition-colors flex items-center gap-1 ${
+                        className={`hover:text-slate-300 transition-colors flex items-center gap-1 ${
                           speakingMessageId === message.id ? "text-indigo-400" : ""
                         }`}
-                        title="Listen to response"
+                        title="Listen to audio"
                       >
                         {speakingMessageId === message.id ? (
                           <>
-                            <VolumeX className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                            <span className="text-indigo-400 text-xs">Stop Audio</span>
+                            <VolumeX className="w-3 h-3 text-indigo-400 animate-pulse" />
+                            <span className="text-indigo-400 text-xs">Stop</span>
                           </>
                         ) : (
                           <>
-                            <Volume2 className="w-3.5 h-3.5" />
+                            <Volume2 className="w-3 h-3" />
                             <span>Listen</span>
                           </>
                         )}
@@ -1035,8 +1057,8 @@ export default function ChatPage() {
                 </div>
 
                 {message.role === "user" && (
-                  <div className="w-8 h-8 rounded-lg bg-neutral-800 border border-neutral-700 flex items-center justify-center shrink-0 mt-1 shadow-sm">
-                    <User className="w-4 h-4 text-neutral-300" />
+                  <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 mt-1 shadow-sm">
+                    <User className="w-4 h-4 text-slate-300" />
                   </div>
                 )}
               </div>
@@ -1046,21 +1068,21 @@ export default function ChatPage() {
         </main>
 
         {/* Input Composer Footer */}
-        <footer className="border-t border-neutral-800 bg-neutral-900/60 backdrop-blur-md px-4 sm:px-6 py-4">
-          <div className="max-w-3xl mx-auto space-y-2">
-            <div className="relative flex items-end gap-2 bg-neutral-900 border border-neutral-750 rounded-2xl p-2 shadow-lg focus-within:border-indigo-500/80 focus-within:ring-1 focus-within:ring-indigo-500/50 transition-all">
+        <footer className="border-t border-slate-800/80 bg-[#12151e]/80 backdrop-blur-md px-4 sm:px-6 py-4">
+          <div className="max-w-2xl mx-auto space-y-2">
+            <div className="relative flex items-end gap-2 bg-[#171b27] border border-slate-700/80 rounded-2xl p-2.5 shadow-xl focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500/50 transition-all">
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
                   e.target.style.height = "auto";
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Enter your name, contact info, enquiry, or preferred date & time..."
+                placeholder="Type your name, contact info, enquiry, or preferred date & time..."
                 rows={1}
-                className="flex-1 bg-transparent border-0 resize-none px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none max-h-44"
+                className="flex-1 bg-transparent border-0 resize-none px-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none max-h-40"
               />
 
               {/* Voice Dictation (Microphone) */}
@@ -1069,9 +1091,9 @@ export default function ChatPage() {
                 className={`p-2.5 rounded-xl transition-all shadow-sm shrink-0 ${
                   isRecording
                     ? "bg-rose-600 text-white animate-pulse"
-                    : "bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-200"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200"
                 }`}
-                title={isRecording ? "Stop voice dictation" : "Dictate via microphone"}
+                title={isRecording ? "Stop dictation" : "Dictate via microphone"}
               >
                 {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </button>
@@ -1090,7 +1112,7 @@ export default function ChatPage() {
                 <button
                   onClick={() => handleSend()}
                   disabled={!input.trim()}
-                  className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white transition-all shadow-md shrink-0 disabled:cursor-not-allowed"
+                  className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 text-white transition-all shadow-md shrink-0 disabled:cursor-not-allowed"
                   title="Send message (Enter)"
                 >
                   <Send className="w-4 h-4" />
@@ -1098,12 +1120,12 @@ export default function ChatPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-between px-2 text-[11px] text-neutral-500">
+            <div className="flex items-center justify-between px-2 text-[11px] text-slate-500">
               <span>
-                Workflow: <strong>Welcome → Details & Follow-up → Scheduling → Confirmation</strong>
+                Flow: <strong>Welcome → Contextual Intake → Scheduling → Confirmation</strong>
               </span>
               <span className="hidden sm:inline">
-                Real-time Intake Assistant
+                Real-time Assistant
               </span>
             </div>
           </div>

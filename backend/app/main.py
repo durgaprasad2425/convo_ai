@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from app.config import settings
 from app.schemas import ChatRequest, ChatResponse, ModelInfo
 from app.services.llm import get_stream_generator, get_available_models
-from typing import List
+from app.db import get_all_appointments, update_status, delete_appointment, create_appointment
+from typing import List, Dict, Any
 
 app = FastAPI(
     title="Convo AI API",
@@ -52,6 +53,33 @@ def get_welcome_message():
         "sender": "Convo Desk",
         "status": "ready"
     }
+
+
+@app.get("/api/appointments")
+def list_appointments():
+    """Returns all booked appointments from SQLite database."""
+    return get_all_appointments()
+
+
+@app.patch("/api/appointments/{ref_id}/status")
+def change_appointment_status(ref_id: str, payload: Dict[str, str] = Body(...)):
+    """Updates appointment status: 'confirmed', 'completed', or 'cancelled'."""
+    new_status = payload.get("status")
+    if not new_status:
+        raise HTTPException(status_code=400, detail="Status is required.")
+    success = update_status(ref_id, new_status)
+    if not success:
+        raise HTTPException(status_code=404, detail="Appointment not found.")
+    return {"id": ref_id, "status": new_status, "updated": True}
+
+
+@app.delete("/api/appointments/{ref_id}")
+def remove_appointment(ref_id: str):
+    """Deletes an appointment by reference ID."""
+    success = delete_appointment(ref_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Appointment not found.")
+    return {"id": ref_id, "deleted": True}
 
 
 @app.post("/api/chat/stream")
