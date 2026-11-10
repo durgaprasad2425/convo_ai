@@ -97,10 +97,10 @@ def simulate_intake_flow(messages: List[ChatMessage]) -> str:
     user_messages = [m.content.strip() for m in messages if m.role == "user"]
     if not user_messages:
         return (
-            "👋 **Hello and welcome!**\n\n"
-            "I'm **Convo Desk**, your virtual assistant. I'm here to assist with your inquiries "
-            "and help schedule an appointment with our specialist team.\n\n"
-            "To get started, may I have your **full name** and the **purpose of your enquiry** today?"
+            "👋 **Welcome to Convo Desk!**\n\n"
+            "I'm your dedicated customer concierge. Whether you're exploring our solutions, requesting a live product demo, "
+            "or planning a technical consultation, I'm here to assist and reserve your priority appointment with our specialist team.\n\n"
+            "To get started, may I please have your **full name** and the **purpose of your enquiry** today?"
         )
 
     last_user_input = user_messages[-1]

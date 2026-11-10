@@ -69,9 +69,9 @@ interface ChatSession {
 }
 
 const INITIAL_WELCOME_TEXT =
-  "👋 **Hello and welcome!**\n\n" +
-  "I'm **Convo Desk**, your virtual customer service and scheduling assistant.\n\n" +
-  "To get started and schedule an appointment with our specialist, may I have your **full name** and the **purpose of your enquiry** today?";
+  "👋 **Welcome to Convo Desk!**\n\n" +
+  "I'm your dedicated customer concierge. Whether you're exploring our solutions, requesting a live product demo, or planning a technical consultation, I'm here to assist and reserve your priority appointment with our specialist team.\n\n" +
+  "To get started, may I please have your **full name** and the **purpose of your enquiry** today?";
 
 const QUICK_INQUIRIES = [
   {
@@ -680,11 +680,11 @@ export default function ChatPage() {
 
     // Standard markdown rendering
     const renderedLines = content.split("\n").map((line, lIdx) => {
-      if (line.includes("Hello and welcome!")) {
+      if (line.includes("Welcome to Convo Desk!") || line.includes("Hello and welcome!")) {
         return (
           <div key={lIdx} className="text-indigo-600 font-bold text-lg mb-2 flex items-center gap-1.5">
             <span>👋</span>
-            <span>Hello and welcome!</span>
+            <span>Welcome to Convo Desk!</span>
           </div>
         );
       }
@@ -924,7 +924,7 @@ export default function ChatPage() {
               N
             </div>
             <div>
-              <div className="text-xs font-bold text-slate-800 leading-tight">Naveen</div>
+              <div className="text-xs font-bold text-slate-800 leading-tight">Gollu DurgaPrasad</div>
               <div className="text-[10px] text-slate-400">Admin</div>
             </div>
             <ChevronDown className="w-3 h-3 text-slate-400" />
