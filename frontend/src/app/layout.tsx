@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Convo AI - Real-time Conversational AI Assistant",
-  description: "Next-generation streaming conversational AI powered by Gemini, OpenAI, and FastAPI",
+  title: "Convo Desk - AI Customer Assistant",
+  description: "Intelligent customer service and appointment scheduling assistant.",
 };
 
 export default function RootLayout({
@@ -25,9 +25,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-neutral-950 text-neutral-100">
+      <body className="min-h-full flex flex-col bg-[#f8f9fe] text-slate-800 font-sans">
         {children}
       </body>
     </html>

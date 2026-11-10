@@ -6,19 +6,15 @@ import {
   Bot,
   User,
   Sparkles,
-  Settings,
   Trash2,
   Copy,
   Check,
-  RefreshCw,
-  Sliders,
   ChevronDown,
   Square,
-  AlertCircle,
   Plus,
   MessageSquare,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ChevronsLeft,
+  ChevronsRight,
   Mic,
   MicOff,
   Volume2,
@@ -26,13 +22,16 @@ import {
   Download,
   RotateCcw,
   Calendar,
+  Cloud,
+  Layers,
+  Headphones,
+  Bell,
+  HelpCircle,
+  Paperclip,
   CheckCircle2,
-  Clock,
-  Phone,
-  Mail,
-  FileText,
   CalendarPlus,
   ExternalLink,
+  Search,
 } from "lucide-react";
 
 interface Message {
@@ -60,47 +59,7 @@ interface ChatSession {
   title: string;
   createdAt: string;
   messages: Message[];
-  model: string;
 }
-
-interface ModelInfo {
-  id: string;
-  name: string;
-  provider: string;
-  is_available: boolean;
-  description?: string;
-}
-
-const DEFAULT_MODELS: ModelInfo[] = [
-  {
-    id: "mock-intake-v1",
-    name: "Convo Intake Bot (Mock)",
-    provider: "mock",
-    is_available: true,
-    description: "Built-in intake & appointment state machine (no API key required).",
-  },
-  {
-    id: "mistral-small-latest",
-    name: "Mistral Small 3",
-    provider: "mistral",
-    is_available: false,
-    description: "Fast, high-efficiency Mistral AI reasoning model.",
-  },
-  {
-    id: "gemini-2.5-flash",
-    name: "Gemini 2.5 Flash",
-    provider: "gemini",
-    is_available: false,
-    description: "Google Gemini configured with 6-step customer intake instructions.",
-  },
-  {
-    id: "gpt-4o-mini",
-    name: "GPT-4o Mini",
-    provider: "openai",
-    is_available: false,
-    description: "OpenAI GPT-4o Mini configured with 6-step customer intake instructions.",
-  },
-];
 
 const INITIAL_WELCOME_TEXT =
   "👋 **Hello and welcome!**\n\n" +
@@ -108,10 +67,26 @@ const INITIAL_WELCOME_TEXT =
   "To get started and schedule an appointment with our specialist, may I have your **full name** and the **purpose of your enquiry** today?";
 
 const QUICK_INQUIRIES = [
-  "Hi, I'm Sarah Jenkins. I want to schedule a product demo for my team.",
-  "Hello, my name is David Miller. I need a technical consultation on cloud migration.",
-  "Hi, I am Emily Zhang. I'd like to inquire about enterprise pricing & contracts.",
-  "Hello! I am Mark Davis and I want to book a support consultation.",
+  {
+    icon: Calendar,
+    iconBg: "bg-purple-100 text-purple-600",
+    text: "Hi, I'm Sarah Jenkins. I want to schedule a product demo for my team.",
+  },
+  {
+    icon: Cloud,
+    iconBg: "bg-sky-100 text-sky-600",
+    text: "Hello, my name is David Miller. I need a technical consultation on cloud migration.",
+  },
+  {
+    icon: Layers,
+    iconBg: "bg-indigo-100 text-indigo-600",
+    text: "Hi, I am Emily Zhang. I'd like to inquire about enterprise pricing & contracts.",
+  },
+  {
+    icon: Headphones,
+    iconBg: "bg-pink-100 text-pink-600",
+    text: "Hello! I am Mark Davis and I want to book a support consultation.",
+  },
 ];
 
 const QUICK_TIME_SLOTS = [
@@ -126,11 +101,7 @@ export default function ChatPage() {
   const [activeSessionId, setActiveSessionId] = useState<string>("");
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [activeModel, setActiveModel] = useState("mock-intake-v1");
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>(DEFAULT_MODELS);
-  const [backendStatus, setBackendStatus] = useState<"checking" | "online" | "offline">("checking");
-  const [temperature, setTemperature] = useState(0.7);
-  const [showSettings, setShowSettings] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<"online" | "offline">("online");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -148,15 +119,12 @@ export default function ChatPage() {
     id: "session-" + Date.now(),
     title: "New Customer Enquiry",
     createdAt: "2026-01-01T00:00:00.000Z",
-    model: activeModel,
     messages: [
       {
         id: "welcome-msg",
         role: "assistant",
         content: INITIAL_WELCOME_TEXT,
         timestamp: "Just now",
-        model: activeModel,
-        provider: "intake-bot",
         isStreaming: false,
       },
     ],
@@ -165,13 +133,12 @@ export default function ChatPage() {
   // Load sessions from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("convo_desk_sessions");
+      const saved = localStorage.getItem("convo_desk_light_sessions");
       if (saved) {
         const parsed: ChatSession[] = JSON.parse(saved);
         if (parsed.length > 0) {
           setSessions(parsed);
           setActiveSessionId(parsed[0].id);
-          setActiveModel(parsed[0].model || "mock-intake-v1");
           return;
         }
       }
@@ -186,7 +153,7 @@ export default function ChatPage() {
   // Save sessions to localStorage
   useEffect(() => {
     if (sessions.length > 0) {
-      localStorage.setItem("convo_desk_sessions", JSON.stringify(sessions));
+      localStorage.setItem("convo_desk_light_sessions", JSON.stringify(sessions));
     }
   }, [sessions]);
 
@@ -200,12 +167,9 @@ export default function ChatPage() {
         role: "assistant",
         content: INITIAL_WELCOME_TEXT,
         timestamp: "Just now",
-        model: activeModel,
-        provider: "intake-bot",
         isStreaming: false,
       },
     ],
-    model: activeModel,
   };
 
   const messages = currentSession.messages;
@@ -263,29 +227,15 @@ export default function ChatPage() {
   }, []);
 
   const checkBackendHealth = async () => {
-    setBackendStatus("checking");
     try {
       const res = await fetch("http://localhost:8000/");
       if (res.ok) {
         setBackendStatus("online");
-        fetchModels();
       } else {
         setBackendStatus("offline");
       }
     } catch {
       setBackendStatus("offline");
-    }
-  };
-
-  const fetchModels = async () => {
-    try {
-      const res = await fetch("http://localhost:8000/api/models");
-      if (res.ok) {
-        const data = await res.json();
-        setAvailableModels(data);
-      }
-    } catch (e) {
-      console.warn("Could not fetch models:", e);
     }
   };
 
@@ -302,7 +252,7 @@ export default function ChatPage() {
           if (title === "New Customer Enquiry" && updated.length > 1) {
             const firstUserMsg = updated.find((m) => m.role === "user");
             if (firstUserMsg) {
-              title = firstUserMsg.content.slice(0, 26) + (firstUserMsg.content.length > 26 ? "..." : "");
+              title = firstUserMsg.content.slice(0, 24) + (firstUserMsg.content.length > 24 ? "..." : "");
             }
           }
           return { ...session, messages: updated, title };
@@ -352,21 +302,6 @@ export default function ChatPage() {
     }
   };
 
-  const resetConversation = () => {
-    if (isGenerating) handleStop();
-    updateCurrentSessionMessages([
-      {
-        id: "welcome-reset-" + Date.now(),
-        role: "assistant",
-        content: INITIAL_WELCOME_TEXT,
-        timestamp: "Just now",
-        model: activeModel,
-        provider: "intake-bot",
-        isStreaming: false,
-      },
-    ]);
-  };
-
   // Text to Speech
   const toggleSpeech = (text: string, messageId: string) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -393,7 +328,7 @@ export default function ChatPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.");
+      alert("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
       return;
     }
     if (isRecording) {
@@ -425,7 +360,7 @@ export default function ChatPage() {
     }
   };
 
-  // Export Confirmation
+  // Export Transcript
   const exportChat = () => {
     if (messages.length === 0) return;
     const content = messages
@@ -435,7 +370,7 @@ export default function ChatPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `Intake_Confirmation_${currentSession.id}.md`;
+    link.download = `ConvoDesk_Intake_${currentSession.id}.md`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -476,7 +411,7 @@ export default function ChatPage() {
       id: assistantMessageId,
       role: "assistant",
       content: "",
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      timestamp: "Just now",
       isStreaming: true,
     };
 
@@ -492,7 +427,6 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
-          temperature: temperature,
         }),
         signal: abortController.signal,
       });
@@ -536,8 +470,6 @@ export default function ChatPage() {
                           ...msg,
                           content: accumulatedText,
                           isStreaming: false,
-                          model: parsed.model || msg.model,
-                          provider: parsed.provider || msg.provider,
                         }
                       : msg
                   )
@@ -612,65 +544,65 @@ export default function ChatPage() {
       return (
         <div className="space-y-4">
           {introText.length > 0 && (
-            <div className="text-slate-200 leading-relaxed whitespace-pre-wrap font-medium">
+            <div className="text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
               {introText.join("\n")}
             </div>
           )}
 
-          {/* Sleek Appointment Card */}
-          <div className="overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950/20 shadow-xl p-5 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          {/* Clean Light-Mode Appointment Card */}
+          <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5 space-y-4 shadow-sm">
+            <div className="flex items-center justify-between pb-3 border-b border-emerald-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
+                  <CheckCircle2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-white tracking-tight">Appointment Confirmed</h4>
-                  <p className="text-[11px] text-slate-400">Official Scheduling Receipt</p>
+                  <h4 className="text-sm font-semibold text-slate-900 tracking-tight">Appointment Confirmed</h4>
+                  <p className="text-[11px] text-slate-500">Official Scheduling Receipt</p>
                 </div>
               </div>
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+              <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
                 Confirmed
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
               {rows.map((row, idx) => (
-                <div key={idx} className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-2.5">
+                <div key={idx} className="bg-white border border-slate-200/70 rounded-xl p-2.5 shadow-2xs">
                   <div className="text-[10px] uppercase tracking-wider text-slate-400 font-medium mb-0.5">
                     {row.label}
                   </div>
-                  <div className="text-white font-medium text-xs break-words">
+                  <div className="text-slate-800 font-semibold text-xs break-words">
                     {row.value}
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="pt-2 flex flex-wrap gap-2">
+            <div className="pt-1 flex flex-wrap gap-2">
               <a
                 href={createGoogleCalendarLink(appointmentVal, nameVal)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-medium transition-all shadow-sm"
               >
                 <CalendarPlus className="w-3.5 h-3.5" />
                 <span>Add to Google Calendar</span>
-                <ExternalLink className="w-3 h-3 opacity-70" />
+                <ExternalLink className="w-3 h-3 opacity-80" />
               </a>
 
               <button
                 onClick={exportChat}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium transition-colors"
               >
-                <Download className="w-3.5 h-3.5" />
+                <Download className="w-3.5 h-3.5 text-slate-500" />
                 <span>Download Receipt</span>
               </button>
             </div>
           </div>
 
           {outroText.length > 0 && (
-            <div className="text-xs text-slate-400 italic whitespace-pre-wrap leading-relaxed">
+            <div className="text-xs text-slate-500 italic whitespace-pre-wrap leading-relaxed">
               {outroText.join("\n")}
             </div>
           )}
@@ -680,70 +612,145 @@ export default function ChatPage() {
 
     // Standard markdown rendering
     const renderedLines = content.split("\n").map((line, lIdx) => {
+      // Check for prominent welcome heading
+      if (line.includes("Hello and welcome!")) {
+        return (
+          <div key={lIdx} className="text-indigo-600 font-bold text-lg mb-2 flex items-center gap-1.5">
+            <span>👋</span>
+            <span>Hello and welcome!</span>
+          </div>
+        );
+      }
+
       const isBullet = line.trim().startsWith("- ") || line.trim().startsWith("* ");
-      const formatted = line.replace(/(\*\*|__)(.*?)\1/g, "<strong class='font-semibold text-white'>$2</strong>");
+      const formatted = line.replace(/(\*\*|__)(.*?)\1/g, "<strong class='font-bold text-slate-900'>$2</strong>");
 
       return (
         <span
           key={lIdx}
-          className={`block ${isBullet ? "pl-4 before:content-['•'] before:inline-block before:w-3 before:-ml-4 before:text-indigo-400" : ""}`}
+          className={`block ${isBullet ? "pl-4 before:content-['•'] before:inline-block before:w-3 before:-ml-4 before:text-indigo-500" : ""}`}
           dangerouslySetInnerHTML={{ __html: formatted || "&nbsp;" }}
         />
       );
     });
 
-    return <div className="space-y-1.5 leading-relaxed text-slate-200 text-sm">{renderedLines}</div>;
+    return <div className="space-y-1.5 leading-relaxed text-slate-700 text-sm">{renderedLines}</div>;
   };
 
   return (
-    <div className="flex h-screen bg-[#0d0f15] text-slate-100 font-sans antialiased overflow-hidden selection:bg-indigo-600 selection:text-white">
-      {/* Sleek Left Sidebar */}
+    <div className="flex h-screen bg-[#f8f9fe] text-slate-800 font-sans antialiased overflow-hidden selection:bg-purple-500 selection:text-white">
+      {/* Sidebar (Left) */}
       <aside
         className={`${
           sidebarOpen ? "w-64 sm:w-72" : "w-0"
-        } transition-all duration-300 ease-in-out border-r border-slate-800/80 bg-[#12151e] flex flex-col shrink-0 overflow-hidden relative z-30`}
+        } transition-all duration-300 ease-in-out border-r border-slate-200/80 bg-white flex flex-col shrink-0 overflow-hidden relative z-30`}
       >
-        {/* Sidebar Header */}
-        <div className="p-4 border-b border-slate-800/80">
+        {/* Sidebar Brand Header */}
+        <div className="p-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+              <Bot className="w-6 h-6 text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="font-bold text-sm tracking-tight text-slate-900">Convo Desk</h2>
+              <p className="text-[11px] text-slate-400 font-normal">AI Customer Assistant</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
+            title="Collapse sidebar"
+          >
+            <ChevronsLeft className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* New Customer Chat Button */}
+        <div className="px-4 pb-3">
           <button
             onClick={createNewSession}
-            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.01] active:scale-[0.99]"
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#6366f1] via-[#7c3aed] to-[#8b5cf6] hover:opacity-95 text-white text-xs font-semibold py-3 px-4 rounded-2xl shadow-md shadow-indigo-500/20 transition-all hover:scale-[1.01] active:scale-[0.99]"
           >
             <Plus className="w-4 h-4" />
             <span>New Customer Chat</span>
           </button>
         </div>
 
-        {/* Minimalist Visual Progress Tracker */}
-        <div className="px-4 py-3 border-b border-slate-800/60 bg-slate-900/40">
-          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300 mb-2">
+        {/* Intake Workflow Stepper */}
+        <div className="px-4 py-3 mx-3 my-1 rounded-2xl border border-slate-100 bg-[#fafbff]">
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-800 mb-2.5">
             <span>Intake Workflow</span>
-            <span className="text-[10px] text-indigo-400 font-mono">
+            <span className="text-[11px] text-slate-400 font-medium">
               Step {intakeState.step} of 4
             </span>
           </div>
 
-          {/* Progress Bar */}
-          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex mb-2.5">
+          {/* Stepper with Circles & Connecting Line */}
+          <div className="relative flex items-center justify-between px-2 mb-2">
+            <div className="absolute left-4 right-4 top-1/2 -translate-y-1/2 h-0.5 bg-slate-200 z-0" />
+            
+            {/* Step 1 */}
             <div
-              className="h-full bg-indigo-500 transition-all duration-500 ease-out"
-              style={{ width: `${(intakeState.step / 4) * 100}%` }}
-            />
+              className={`relative z-10 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                intakeState.step >= 1
+                  ? "bg-[#6366f1] text-white ring-2 ring-indigo-100"
+                  : "bg-white border-2 border-slate-300 text-slate-400"
+              }`}
+            >
+              <Check className="w-3 h-3 stroke-[3]" />
+            </div>
+
+            {/* Step 2 */}
+            <div
+              className={`relative z-10 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                intakeState.step >= 2
+                  ? "bg-[#6366f1] text-white ring-2 ring-indigo-100"
+                  : "bg-white border-2 border-slate-300 text-slate-400"
+              }`}
+            >
+              {intakeState.step >= 2 ? <Check className="w-3 h-3 stroke-[3]" /> : ""}
+            </div>
+
+            {/* Step 3 */}
+            <div
+              className={`relative z-10 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                intakeState.step >= 3
+                  ? "bg-[#6366f1] text-white ring-2 ring-indigo-100"
+                  : "bg-white border-2 border-slate-300 text-slate-400"
+              }`}
+            >
+              {intakeState.step >= 3 ? <Check className="w-3 h-3 stroke-[3]" /> : ""}
+            </div>
+
+            {/* Step 4 */}
+            <div
+              className={`relative z-10 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                intakeState.step >= 4
+                  ? "bg-emerald-500 text-white ring-2 ring-emerald-100"
+                  : "bg-white border-2 border-slate-300 text-slate-400"
+              }`}
+            >
+              {intakeState.step >= 4 ? <Check className="w-3 h-3 stroke-[3]" /> : ""}
+            </div>
           </div>
 
-          <div className="grid grid-cols-4 text-center text-[9px] font-medium text-slate-500">
-            <span className={intakeState.step >= 1 ? "text-indigo-400" : ""}>Welcome</span>
-            <span className={intakeState.step >= 2 ? "text-indigo-400" : ""}>Details</span>
-            <span className={intakeState.step >= 3 ? "text-indigo-400" : ""}>Schedule</span>
-            <span className={intakeState.step >= 4 ? "text-emerald-400" : ""}>Confirmed</span>
+          <div className="grid grid-cols-4 text-center text-[10px] font-medium text-slate-400">
+            <span className={intakeState.step >= 1 ? "text-indigo-600 font-semibold" : ""}>Welcome</span>
+            <span className={intakeState.step >= 2 ? "text-indigo-600 font-semibold" : ""}>Details</span>
+            <span className={intakeState.step >= 3 ? "text-indigo-600 font-semibold" : ""}>Schedule</span>
+            <span className={intakeState.step >= 4 ? "text-emerald-600 font-semibold" : ""}>Confirmed</span>
           </div>
         </div>
 
-        {/* Recent Conversations List */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 px-2 py-1.5">
-            Past Conversations
+        {/* Past Conversations List */}
+        <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-800 py-1.5">
+            <span>Past Conversations</span>
+            <button className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors">
+              <Search className="w-3.5 h-3.5" />
+            </button>
           </div>
+
           {sessions.map((session) => (
             <div
               key={session.id}
@@ -751,19 +758,21 @@ export default function ChatPage() {
                 if (isGenerating) handleStop();
                 setActiveSessionId(session.id);
               }}
-              className={`group flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all ${
+              className={`group flex items-center justify-between p-2.5 rounded-2xl text-xs cursor-pointer transition-all ${
                 session.id === activeSessionId
-                  ? "bg-slate-800 text-white font-medium shadow-sm"
-                  : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+                  ? "bg-[#ede9fe] text-slate-900 font-medium"
+                  : "text-slate-600 hover:bg-slate-50"
               }`}
             >
               <div className="flex items-center gap-2.5 truncate mr-1">
-                <MessageSquare className="w-3.5 h-3.5 shrink-0 text-slate-500 group-hover:text-indigo-400 transition-colors" />
+                <div className="w-7 h-7 rounded-lg bg-blue-500 flex items-center justify-center text-white shrink-0">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                </div>
                 <span className="truncate">{session.title}</span>
               </div>
               <button
                 onClick={(e) => deleteSession(session.id, e)}
-                className="opacity-0 group-hover:opacity-100 hover:text-rose-400 p-1 rounded-md transition-opacity"
+                className="opacity-0 group-hover:opacity-100 hover:text-rose-500 p-1 rounded-md transition-opacity"
                 title="Delete session"
               >
                 <Trash2 className="w-3 h-3" />
@@ -772,166 +781,154 @@ export default function ChatPage() {
           ))}
         </div>
 
-        {/* Sidebar Footer */}
-        <div className="p-3.5 border-t border-slate-800/80 bg-slate-900/30 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>{sessions.length} Chat{sessions.length > 1 ? "s" : ""}</span>
+        {/* Decorative Wave at the bottom of the sidebar */}
+        <div className="relative w-full h-16 pointer-events-none overflow-hidden shrink-0">
+          <svg
+            viewBox="0 0 500 150"
+            preserveAspectRatio="none"
+            className="w-full h-full opacity-35"
+          >
+            <path
+              d="M0.00,49.98 C149.99,150.00 349.81,-49.98 500.00,49.98 L500.00,150.00 L0.00,150.00 Z"
+              fill="url(#purpleWave)"
+            />
+            <defs>
+              <linearGradient id="purpleWave" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#a855f7" />
+                <stop offset="100%" stopColor="#ec4899" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+
+        {/* User Profile & Export Footer */}
+        <div className="p-3.5 border-t border-slate-100 bg-white flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-semibold flex items-center justify-center text-xs shadow-2xs">
+              N
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-800 leading-tight">Naveen</div>
+              <div className="text-[10px] text-slate-400">Admin</div>
+            </div>
+            <ChevronDown className="w-3 h-3 text-slate-400" />
+          </div>
+
           <button
             onClick={exportChat}
             disabled={messages.length === 0}
-            className="flex items-center gap-1.5 hover:text-slate-200 disabled:opacity-40 transition-colors"
-            title="Download Transcript"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition-colors disabled:opacity-40"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5 text-slate-500" />
             <span>Export</span>
           </button>
         </div>
       </aside>
 
       {/* Main Chat Interface */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0d0f15]">
-        {/* Clean Modern Navbar */}
-        <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-800/80 bg-[#12151e]/80 backdrop-blur-md sticky top-0 z-20">
+      <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#f8f9fe]">
+        {/* Top Navbar */}
+        <header className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200/80 sticky top-0 z-20">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-            >
-              {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
-            </button>
+            {!sidebarOpen && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                title="Expand sidebar"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+            )}
 
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-md shadow-indigo-500/20">
-                <Calendar className="w-4 h-4 text-white" />
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#6366f1] to-[#8b5cf6] flex items-center justify-center text-white shadow-sm">
+              <MessageSquare className="w-5 h-5 fill-current" />
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-bold text-sm sm:text-base tracking-tight text-slate-900">
+                  Convo Desk
+                </h1>
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Assistant
+                </span>
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="font-semibold text-sm sm:text-base tracking-tight text-white">
-                    Convo Desk
-                  </h1>
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    Live Assistant
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        backendStatus === "online"
-                          ? "bg-emerald-400"
-                          : backendStatus === "checking"
-                          ? "bg-amber-400"
-                          : "bg-rose-500"
-                      }`}
-                    />
-                    <span className="capitalize">{backendStatus}</span>
-                  </span>
-                  <span>•</span>
-                  <button
-                    onClick={checkBackendHealth}
-                    className="hover:text-slate-200 transition-colors flex items-center gap-1"
-                    title="Refresh backend status"
-                  >
-                    <RefreshCw className="w-2.5 h-2.5" />
-                  </button>
-                </div>
+              <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    backendStatus === "online" ? "bg-emerald-500" : "bg-rose-500"
+                  }`}
+                />
+                <span className="capitalize">{backendStatus}</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
               </div>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className={`p-2 rounded-xl border transition-colors ${
-                showSettings
-                  ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                  : "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
-              }`}
-              title="Workflow Info"
-            >
-              <Sliders className="w-4 h-4" />
+          {/* Right Header Icons */}
+          <div className="flex items-center gap-3">
+            <button className="relative p-2 rounded-full hover:bg-slate-100 text-slate-600 transition-colors">
+              <Bell className="w-4 h-4" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-purple-600 ring-2 ring-white" />
             </button>
 
-            <button
-              onClick={resetConversation}
-              className="p-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:text-rose-400 hover:border-rose-500/50 transition-colors"
-              title="Reset conversation"
-            >
-              <RotateCcw className="w-4 h-4" />
+            <button className="p-2 rounded-full hover:bg-slate-100 text-slate-600 transition-colors">
+              <HelpCircle className="w-4 h-4" />
             </button>
+
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#6366f1] to-[#8b5cf6] text-white font-semibold flex items-center justify-center text-xs shadow-2xs">
+              G
+            </div>
           </div>
         </header>
 
-        {/* Settings Panel */}
-        {showSettings && (
-          <div className="border-b border-slate-800 bg-slate-900/95 px-6 py-4 transition-all">
-            <div className="max-w-2xl mx-auto space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-slate-200 flex items-center gap-2">
-                  <Settings className="w-3.5 h-3.5 text-indigo-400" />
-                  Bot Configuration
-                </h3>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="text-xs text-slate-400 hover:text-white"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60 text-xs text-slate-300 space-y-1.5">
-                <div className="font-semibold text-emerald-400">Strict 6-Step Workflow:</div>
-                <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-400">
-                  <div>1. 👋 Customer Welcome Greeting</div>
-                  <div>2. 👤 Name, Contact, Email & Purpose</div>
-                  <div>3. 💬 Contextual Follow-up Questions</div>
-                  <div>4. 📅 Preferred Date & Time</div>
-                  <div>5. ✅ Structured Booking Confirmation</div>
-                  <div>6. 🛡️ Robust Validation & Error Handling</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Conversation Stream */}
-        <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6">
-          <div className="max-w-2xl mx-auto space-y-6">
-            {/* Quick Suggestion Chips (when only initial greeting is displayed) */}
+        <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 space-y-6">
+          <div className="max-w-3xl mx-auto space-y-6">
+            {/* Quick Suggestion Cards Grid (When conversation begins) */}
             {messages.length === 1 && (
-              <div className="space-y-2.5 pt-1">
-                <div className="text-xs text-slate-400 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Tap an example enquiry to begin:</span>
+              <div className="space-y-3 pt-1">
+                <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-purple-600 fill-current" />
+                  <span>Tap on an example enquiry to begin:</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {QUICK_INQUIRIES.map((prompt, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleSend(prompt)}
-                      className="text-left text-xs p-3 rounded-xl border border-slate-800/90 bg-[#161924] hover:bg-[#1c2030] hover:border-indigo-500/50 text-slate-200 transition-all shadow-sm"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {QUICK_INQUIRIES.map((item, idx) => {
+                    const IconComponent = item.icon;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => handleSend(item.text)}
+                        className="text-left p-3.5 rounded-2xl bg-white border border-slate-200/70 hover:border-purple-300 hover:shadow-md transition-all flex items-start gap-3 shadow-2xs group"
+                      >
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${item.iconBg}`}>
+                          <IconComponent className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs text-slate-700 leading-snug font-normal group-hover:text-slate-900">
+                          {item.text}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
             {/* Quick Time Slot Chips (when assistant is asking for date and time) */}
             {intakeState.step === 3 && !intakeState.confirmed && (
-              <div className="p-3 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 space-y-2">
-                <div className="text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Quick Appointment Time Slots:</span>
+              <div className="p-4 rounded-2xl bg-white border border-purple-200 shadow-sm space-y-2.5">
+                <div className="text-xs font-semibold text-indigo-700 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-indigo-600" />
+                  <span>Select preferred appointment time slot:</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {QUICK_TIME_SLOTS.map((slot, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSend(slot)}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors shadow-sm"
+                      className="text-xs px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 text-indigo-700 border border-indigo-200/60 font-medium transition-colors shadow-2xs"
                     >
                       {slot}
                     </button>
@@ -944,13 +941,13 @@ export default function ChatPage() {
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex gap-3 sm:gap-4 ${
+                className={`flex gap-3 sm:gap-3.5 ${
                   message.role === "user" ? "justify-end" : "justify-start"
                 }`}
               >
                 {message.role === "assistant" && (
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shrink-0 mt-1 shadow-md shadow-indigo-600/10">
-                    <Bot className="w-4 h-4 text-white" />
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#6366f1] to-[#8b5cf6] flex items-center justify-center text-white shrink-0 mt-0.5 shadow-sm">
+                    <Bot className="w-5 h-5" />
                   </div>
                 )}
 
@@ -960,8 +957,8 @@ export default function ChatPage() {
                   }`}
                 >
                   <div className="flex items-center gap-2 px-1 text-[11px] text-slate-400">
-                    <span className="font-medium text-slate-300">
-                      {message.role === "user" ? "Customer" : "Convo Desk"}
+                    <span className="font-semibold text-slate-700">
+                      {message.role === "user" ? "You" : "Convo Desk"}
                     </span>
                     <span>•</span>
                     <span>{message.timestamp}</span>
@@ -969,43 +966,48 @@ export default function ChatPage() {
 
                   {/* Message Bubble */}
                   <div
-                    className={`rounded-2xl px-4 py-3.5 shadow-sm transition-all ${
+                    className={`rounded-3xl p-5 shadow-sm transition-all ${
                       message.role === "user"
-                        ? "bg-indigo-600 text-white rounded-tr-sm"
-                        : "bg-[#161a25] border border-slate-800 text-slate-200 rounded-tl-sm w-full"
+                        ? "bg-gradient-to-r from-[#6366f1] via-[#7c3aed] to-[#8b5cf6] text-white rounded-tr-md shadow-md shadow-indigo-500/10 font-normal text-sm leading-relaxed"
+                        : "bg-gradient-to-r from-[#eff2fe] to-[#f6f2fe] border border-slate-200/50 text-slate-800 rounded-tl-md w-full relative overflow-hidden"
                     }`}
                   >
+                    {/* Decorative subtle wave curve in the bottom corner of assistant bubble */}
+                    {message.role === "assistant" && (
+                      <div className="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-purple-200/40 pointer-events-none blur-xl" />
+                    )}
+
                     {message.content ? (
                       renderMessageContent(message.content, message.id)
                     ) : message.isStreaming ? (
                       <div className="flex items-center gap-1.5 py-1">
-                        <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" />
-                        <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.2s]" />
-                        <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.4s]" />
+                        <span className="w-2 h-2 rounded-full bg-purple-600 animate-bounce" />
+                        <span className="w-2 h-2 rounded-full bg-purple-600 animate-bounce [animation-delay:0.2s]" />
+                        <span className="w-2 h-2 rounded-full bg-purple-600 animate-bounce [animation-delay:0.4s]" />
                       </div>
                     ) : null}
 
                     {message.isStreaming && message.content && (
-                      <span className="inline-block w-2 h-4 ml-1 bg-indigo-400 animate-pulse align-middle" />
+                      <span className="inline-block w-2 h-4 ml-1 bg-purple-600 animate-pulse align-middle" />
                     )}
                   </div>
 
-                  {/* Footer actions for assistant */}
+                  {/* Action buttons under assistant message */}
                   {message.role === "assistant" && message.content && !message.isStreaming && (
-                    <div className="flex items-center gap-3 pt-1 px-1 text-xs text-slate-500">
+                    <div className="flex items-center gap-2 pt-1 px-1 text-xs text-slate-500">
                       <button
                         onClick={() => handleCopy(message.content, message.id)}
-                        className="hover:text-slate-300 transition-colors flex items-center gap-1"
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs transition-colors shadow-2xs"
                         title="Copy text"
                       >
                         {copiedId === message.id ? (
                           <>
-                            <Check className="w-3 h-3 text-emerald-400" />
-                            <span className="text-emerald-400 text-xs">Copied</span>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-600 font-medium text-xs">Copied</span>
                           </>
                         ) : (
                           <>
-                            <Copy className="w-3 h-3" />
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
                             <span>Copy</span>
                           </>
                         )}
@@ -1013,19 +1015,19 @@ export default function ChatPage() {
 
                       <button
                         onClick={() => toggleSpeech(message.content, message.id)}
-                        className={`hover:text-slate-300 transition-colors flex items-center gap-1 ${
-                          speakingMessageId === message.id ? "text-indigo-400" : ""
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs transition-colors shadow-2xs ${
+                          speakingMessageId === message.id ? "text-purple-600 border-purple-300" : ""
                         }`}
                         title="Listen to audio"
                       >
                         {speakingMessageId === message.id ? (
                           <>
-                            <VolumeX className="w-3 h-3 text-indigo-400 animate-pulse" />
-                            <span className="text-indigo-400 text-xs">Stop</span>
+                            <VolumeX className="w-3.5 h-3.5 text-purple-600 animate-pulse" />
+                            <span className="text-purple-600 font-medium text-xs">Stop</span>
                           </>
                         ) : (
                           <>
-                            <Volume2 className="w-3 h-3" />
+                            <Volume2 className="w-3.5 h-3.5 text-slate-500" />
                             <span>Listen</span>
                           </>
                         )}
@@ -1035,8 +1037,8 @@ export default function ChatPage() {
                 </div>
 
                 {message.role === "user" && (
-                  <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 mt-1 shadow-sm">
-                    <User className="w-4 h-4 text-slate-300" />
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 shrink-0 mt-0.5 shadow-2xs">
+                    <User className="w-5 h-5" />
                   </div>
                 )}
               </div>
@@ -1045,64 +1047,75 @@ export default function ChatPage() {
           </div>
         </main>
 
-        {/* Input Composer Footer */}
-        <footer className="border-t border-slate-800/80 bg-[#12151e]/80 backdrop-blur-md px-4 sm:px-6 py-4">
-          <div className="max-w-2xl mx-auto space-y-2">
-            <div className="relative flex items-end gap-2 bg-[#171b27] border border-slate-700/80 rounded-2xl p-2.5 shadow-xl focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500/50 transition-all">
+        {/* Input Composer Footer (Capsule floating bar) */}
+        <footer className="px-4 sm:px-8 pb-4 pt-2 bg-transparent">
+          <div className="max-w-3xl mx-auto space-y-2">
+            <div className="relative flex items-center gap-2 bg-white border border-slate-200/90 rounded-full px-4 py-2 shadow-lg shadow-purple-500/5 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 transition-all">
+              <Sparkles className="w-5 h-5 text-purple-600 shrink-0 fill-current" />
+
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
                   e.target.style.height = "auto";
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder="Type your name, contact info, enquiry, or preferred date & time..."
                 rows={1}
-                className="flex-1 bg-transparent border-0 resize-none px-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none max-h-40"
+                className="flex-1 bg-transparent border-0 resize-none px-2 py-1.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none max-h-32"
               />
 
-              {/* Voice Dictation (Microphone) */}
-              <button
-                onClick={toggleRecording}
-                className={`p-2.5 rounded-xl transition-all shadow-sm shrink-0 ${
-                  isRecording
-                    ? "bg-rose-600 text-white animate-pulse"
-                    : "bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200"
-                }`}
-                title={isRecording ? "Stop dictation" : "Dictate via microphone"}
-              >
-                {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  className="p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
+                  title="Attach file"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
 
-              {/* Send / Stop */}
-              {isGenerating ? (
                 <button
-                  onClick={handleStop}
-                  className="p-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium transition-all shadow-md shrink-0 flex items-center gap-1.5 text-xs"
-                  title="Stop generation"
+                  type="button"
+                  onClick={toggleRecording}
+                  className={`p-2 rounded-full transition-all ${
+                    isRecording
+                      ? "bg-rose-500 text-white animate-pulse"
+                      : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                  }`}
+                  title={isRecording ? "Stop dictation" : "Dictate via microphone"}
                 >
-                  <Square className="w-3.5 h-3.5 fill-current" />
-                  <span className="hidden sm:inline">Stop</span>
+                  {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                 </button>
-              ) : (
-                <button
-                  onClick={() => handleSend()}
-                  disabled={!input.trim()}
-                  className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 text-white transition-all shadow-md shrink-0 disabled:cursor-not-allowed"
-                  title="Send message (Enter)"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              )}
+
+                {isGenerating ? (
+                  <button
+                    onClick={handleStop}
+                    className="w-9 h-9 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-all shadow-md shrink-0"
+                    title="Stop generation"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleSend()}
+                    disabled={!input.trim()}
+                    className="w-9 h-9 rounded-full bg-gradient-to-r from-[#6366f1] to-[#8b5cf6] hover:opacity-90 disabled:opacity-40 text-white flex items-center justify-center transition-all shadow-md shadow-indigo-500/20 shrink-0 disabled:cursor-not-allowed"
+                    title="Send message"
+                  >
+                    <Send className="w-4 h-4 -translate-y-px translate-x-px" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center justify-between px-2 text-[11px] text-slate-500">
+            <div className="flex items-center justify-between px-3 text-[11px] text-slate-400">
               <span>
-                Flow: <strong>Welcome → Contextual Intake → Scheduling → Confirmation</strong>
+                Flow: Welcome → Contextual Intake → Scheduling → Confirmation
               </span>
-              <span className="hidden sm:inline">
+              <span className="flex items-center gap-1.5 text-slate-500 font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 Real-time Assistant
               </span>
             </div>
