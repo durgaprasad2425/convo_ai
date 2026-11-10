@@ -22,9 +22,6 @@ import {
   Download,
   RotateCcw,
   Calendar,
-  Cloud,
-  Layers,
-  Headphones,
   Bell,
   HelpCircle,
   Paperclip,
@@ -72,29 +69,6 @@ const INITIAL_WELCOME_TEXT =
   "👋 **Welcome to Convo Desk!**\n\n" +
   "I'm here to assist with your questions and schedule an appointment with our team.\n\n" +
   "To get started, may I have your **full name** and the **purpose of your enquiry** today?";
-
-const QUICK_INQUIRIES = [
-  {
-    icon: Calendar,
-    iconBg: "bg-purple-100 text-purple-600",
-    text: "Hi, I'm Sarah Jenkins. I want to schedule a product demo for my team.",
-  },
-  {
-    icon: Cloud,
-    iconBg: "bg-sky-100 text-sky-600",
-    text: "Hello, my name is David Miller. I need a technical consultation on cloud migration.",
-  },
-  {
-    icon: Layers,
-    iconBg: "bg-indigo-100 text-indigo-600",
-    text: "Hi, I am Emily Zhang. I'd like to inquire about enterprise pricing & contracts.",
-  },
-  {
-    icon: Headphones,
-    iconBg: "bg-pink-100 text-pink-600",
-    text: "Hello! I am Mark Davis and I want to book a support consultation.",
-  },
-];
 
 const QUICK_TIME_SLOTS = [
   "Tomorrow at 10:00 AM",
@@ -1175,36 +1149,6 @@ export default function ChatPage() {
         {/* Conversation Stream */}
         <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 space-y-6">
           <div className="max-w-3xl mx-auto space-y-6">
-            {/* Quick Suggestion Cards Grid (When conversation begins) */}
-            {messages.length === 1 && (
-              <div className="space-y-3 pt-1">
-                <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-purple-600 fill-current" />
-                  <span>Tap on an example enquiry to begin:</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {QUICK_INQUIRIES.map((item, idx) => {
-                    const IconComponent = item.icon;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => handleSend(item.text)}
-                        className="text-left p-3.5 rounded-2xl bg-white border border-slate-200/70 hover:border-purple-300 hover:shadow-md transition-all flex items-start gap-3 shadow-2xs group cursor-pointer"
-                      >
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${item.iconBg}`}>
-                          <IconComponent className="w-4 h-4" />
-                        </div>
-                        <span className="text-xs text-slate-700 leading-snug font-normal group-hover:text-slate-900">
-                          {item.text}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
             {/* Quick Time Slot Chips (when assistant is asking for date and time) */}
             {intakeState.step === 3 && !intakeState.confirmed && (
               <div className="p-4 rounded-2xl bg-white border border-purple-200 shadow-sm space-y-2.5">
