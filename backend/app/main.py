@@ -46,8 +46,7 @@ def get_welcome_message():
         "role": "assistant",
         "content": (
             "👋 **Welcome to Convo Desk!**\n\n"
-            "I'm your dedicated customer concierge. Whether you're exploring our solutions, requesting a live product demo, "
-            "or planning a technical consultation, I'm here to assist and reserve your priority appointment with our specialist team.\n\n"
+            "I'm here to assist with your questions and schedule an appointment with our team.\n\n"
             "To get started, may I please have your **full name** and the **purpose of your enquiry** today?"
         ),
         "sender": "Convo Desk",

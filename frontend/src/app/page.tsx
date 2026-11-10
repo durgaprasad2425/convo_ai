@@ -70,8 +70,8 @@ interface ChatSession {
 
 const INITIAL_WELCOME_TEXT =
   "👋 **Welcome to Convo Desk!**\n\n" +
-  "I'm your dedicated customer concierge. Whether you're exploring our solutions, requesting a live product demo, or planning a technical consultation, I'm here to assist and reserve your priority appointment with our specialist team.\n\n" +
-  "To get started, may I please have your **full name** and the **purpose of your enquiry** today?";
+  "I'm here to assist with your questions and schedule an appointment with our team.\n\n" +
+  "To get started, may I have your **full name** and the **purpose of your enquiry** today?";
 
 const QUICK_INQUIRIES = [
   {
@@ -158,8 +158,18 @@ export default function ChatPage() {
       if (saved) {
         const parsed: ChatSession[] = JSON.parse(saved);
         if (parsed.length > 0) {
-          setSessions(parsed);
-          setActiveSessionId(parsed[0].id);
+          // Sync any fresh session whose only message was the old welcome text
+          const updated = parsed.map((s) => {
+            if (s.messages.length === 1 && s.messages[0].role === "assistant") {
+              return {
+                ...s,
+                messages: [{ ...s.messages[0], content: INITIAL_WELCOME_TEXT }],
+              };
+            }
+            return s;
+          });
+          setSessions(updated);
+          setActiveSessionId(updated[0].id);
           return;
         }
       }
