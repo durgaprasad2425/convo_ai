@@ -182,6 +182,34 @@ When the customer responds with gratitude (*"thank you"*), Convo Desk closes the
   <img src="docs/screenshots/15_thank_you_farewell_completion.jpg" alt="Step 15: Courteous Completion and Appointment Reminder" width="850" />
 </p>
 
+### 16. Live Gmail Inbox Delivery & Native Google Calendar Banner
+The confirmation email is delivered instantly to the customer's Gmail inbox (`n180972@rguktn.ac.in`) with an interactive top Google Calendar event card showing meeting time, timezone (`GMT+5:30`), Google Meet link, and a 1-click **Add to Calendar** banner.
+
+<p align="center">
+  <img src="docs/screenshots/16_gmail_inbox_calendar_banner.jpg" alt="Step 16: Live Gmail Inbox Delivery and Native Calendar Banner" width="850" />
+</p>
+
+### 17. Delivered Branded Confirmation Email Body
+Inside the email, the customer receives an official branded confirmation receipt containing their Reference ID (`ECOM-AI-2026-110111-001`), Scheduled Time (*Wednesday, November 11, 2026 at 11:00 AM*), Duration (*60 Minutes*), Location (*Google Meet Video Conference*), and consultation purpose.
+
+<p align="center">
+  <img src="docs/screenshots/17_delivered_email_receipt_body.jpg" alt="Step 17: Delivered Branded Confirmation Email Body" width="850" />
+</p>
+
+### 18. 1-Click Calendar Sync & Google Meet Room Buttons
+The delivered email includes direct interactive buttons to open the Google Meet room or add the consultation directly into any calendar app, accompanied by the standard RFC 5545 `invite.ics` attachment.
+
+<p align="center">
+  <img src="docs/screenshots/18_delivered_email_meet_actions.png" alt="Step 18: 1-Click Calendar Sync and Google Meet Room Buttons" width="850" />
+</p>
+
+### 19. Live Google Calendar Event with Google Meet Video Conference
+On the host's actual Google Calendar, the appointment is scheduled on **Wednesday, November 11 from 11:00 AM to 12:00 PM**, populated with an active **Google Meet link** (`meet.google.com/frn-zcjp-qvm`), both attendees (`durgaprasadgollu65@gmail.com` and `n180972@rguktn.ac.in`), and full intake notes.
+
+<p align="center">
+  <img src="docs/screenshots/19_live_google_calendar_event_grid.png" alt="Step 19: Live Google Calendar Event with Google Meet Video Room" width="850" />
+</p>
+
 ---
 
 ## 🚀 Getting Started
