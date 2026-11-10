@@ -22,6 +22,22 @@ class Settings(BaseSettings):
     default_openai_model: str = "gpt-4o-mini"
     default_mistral_model: str = "ministral-8b-latest"
     active_provider: str = "mock"
+
+    # Google Calendar Integration
+    google_calendar_id: str = "primary"
+    google_service_account_json: str = ""
+    google_service_account_file: str = ""
+    google_access_token: str = ""
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
+    # Email / SMTP Calendar Event Dispatch
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = "noreply@convodesk.com"
+    smtp_from_name: str = "Convo Desk Invitations"
     
     # CORS
     cors_origins: List[str] = [
