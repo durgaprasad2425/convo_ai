@@ -1,6 +1,10 @@
 import os
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import List
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+ENV_PATH = BACKEND_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -16,7 +20,7 @@ class Settings(BaseSettings):
     # Defaults
     default_gemini_model: str = "gemini-2.5-flash"
     default_openai_model: str = "gpt-4o-mini"
-    default_mistral_model: str = "mistral-small-latest"
+    default_mistral_model: str = "ministral-8b-latest"
     active_provider: str = "mock"
     
     # CORS
@@ -29,7 +33,7 @@ class Settings(BaseSettings):
     ]
 
     class Config:
-        env_file = ".env"
+        env_file = str(ENV_PATH) if ENV_PATH.exists() else ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"
 

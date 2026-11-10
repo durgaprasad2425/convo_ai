@@ -64,12 +64,25 @@ async def mistral_stream(request: ChatRequest) -> AsyncGenerator[str, None]:
         for msg in filtered_msgs:
             messages.append({"role": msg.role, "content": msg.content})
 
-        response = await client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=request.temperature or 0.7,
-            stream=True
-        )
+        try:
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=request.temperature or 0.7,
+                stream=True
+            )
+        except Exception as err:
+            # Fallback to Mistral's highly available ministral-8b or codestral model if quota limited
+            if ("429" in str(err) or "rate" in str(err).lower()) and model_name != "ministral-8b-latest":
+                model_name = "ministral-8b-latest"
+                response = await client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=request.temperature or 0.7,
+                    stream=True
+                )
+            else:
+                raise err
 
         async for chunk in response:
             delta = chunk.choices[0].delta if chunk.choices else None
