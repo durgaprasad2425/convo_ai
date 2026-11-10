@@ -41,54 +41,58 @@ REQUIREMENT 6: ERROR HANDLING
 """
 
 
+def extract_customer_name(all_text: str) -> str:
+    """Extracts customer full name with robust heuristics."""
+    for prefix in ["my name is ", "i am ", "i'm ", "name:"]:
+        if prefix in all_text.lower():
+            idx = all_text.lower().find(prefix) + len(prefix)
+            sub = all_text[idx:]
+            for delim in [".", ",", " and ", " - ", "\n", ";", ":"]:
+                if delim in sub:
+                    sub = sub.split(delim)[0]
+            candidate = sub.strip()
+            # Clean non-alpha
+            cleaned = re.sub(r'[^a-zA-Z\s]', '', candidate).strip()
+            if cleaned and len(cleaned.split()) <= 4:
+                return cleaned.title()
+    return ""
+
+
 def extract_intake_state(messages: List[ChatMessage]) -> Dict[str, Any]:
-    """
-    Parses conversation history to extract collected customer details.
-    """
-    state: Dict[str, Any] = {
-        "name": None,
-        "phone": None,
-        "email": None,
-        "purpose": None,
-        "appointment": None,
-        "confirmed": False
-    }
+    """Parses conversation history to extract collected customer details."""
+    user_texts = [m.content for m in messages if m.role == "user"]
+    combined = " ".join(user_texts)
 
     email_regex = re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+')
-    phone_regex = re.compile(r'(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}')
+    phone_regex = re.compile(r'\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b')
 
-    user_texts = [m.content for m in messages if m.role == "user"]
+    m_email = email_regex.search(combined)
+    m_phone = phone_regex.search(combined)
 
-    for text in user_texts:
-        # Email match
-        if not state["email"]:
-            m_email = email_regex.search(text)
-            if m_email:
-                state["email"] = m_email.group(0)
+    name = extract_customer_name(combined)
 
-        # Phone match
-        if not state["phone"]:
-            m_phone = phone_regex.search(text)
-            if m_phone:
-                state["phone"] = m_phone.group(0)
+    # Detect appointment date/time
+    date_keywords = ["am", "pm", "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "nov", "dec", "jan", "feb", "morning", "afternoon", "at "]
+    appointment_time = None
+    for text in reversed(user_texts):
+        if any(k in text.lower() for k in date_keywords):
+            appointment_time = text.strip()
+            break
 
-        # Name detection heuristics
-        if not state["name"]:
-            lower = text.lower()
-            if "my name is " in lower:
-                state["name"] = text.split("my name is ")[-1].split(".")[0].split(",")[0].strip()
-            elif "i am " in lower and len(text.split()) <= 4:
-                state["name"] = text.split("i am ")[-1].split(".")[0].strip()
-            elif "name:" in lower:
-                state["name"] = text.split("name:")[-1].splitlines()[0].strip()
-
-    return state
+    return {
+        "name": name if name else None,
+        "phone": m_phone.group(0) if m_phone else None,
+        "email": m_email.group(0) if m_email else None,
+        "purpose": user_texts[0] if user_texts else None,
+        "appointment": appointment_time,
+        "confirmed": bool(appointment_time and m_email and m_phone)
+    }
 
 
 def simulate_intake_flow(messages: List[ChatMessage]) -> str:
     """
-    Deterministic intake flow simulator for Mock mode.
-    Fully implements Requirements 1 through 6 with zero external API dependencies.
+    Deterministic, state-machine intake flow simulator for Mock mode.
+    Handles any number of user turns dynamically without brittle step counters.
     """
     user_messages = [m.content.strip() for m in messages if m.role == "user"]
     if not user_messages:
@@ -100,106 +104,94 @@ def simulate_intake_flow(messages: List[ChatMessage]) -> str:
         )
 
     last_user_input = user_messages[-1]
-    turn_count = len(user_messages)
+    all_user_text = " ".join(user_messages)
 
-    # Error handling check for empty or nonsense input
+    # 1. Error handling check for empty or nonsense input
     if len(last_user_input) < 2:
         return (
             "⚠️ It looks like your response was empty or too short. "
             "Could you please provide a bit more detail so I can assist you properly?"
         )
 
-    # State extraction
-    email_match = re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', " ".join(user_messages))
-    phone_match = re.search(r'\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b', " ".join(user_messages))
+    # 2. Extract state
+    name = extract_customer_name(all_user_text) or "there"
+    email_match = re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', all_user_text)
+    phone_match = re.search(r'\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b', all_user_text)
 
-    # Turn 1: Customer gave their name / purpose
-    if turn_count == 1:
-        return (
-            f"Thank you for reaching out! It's a pleasure to connect with you.\n\n"
-            f"Regarding your enquiry: *\"{last_user_input}\"*\n\n"
-            "To help us prepare for your consultation, could you tell me a little more about "
-            "what specific goals or timeline you have in mind? Also, please share your **contact phone number** "
-            "and **email address** so our team can reach you."
-        )
+    # Check date/time reference
+    date_keywords = ["am", "pm", "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "nov", "dec", "jan", "feb", "at ", "morning", "afternoon", "202", ":"]
+    has_time_ref = any(k in last_user_input.lower() for k in date_keywords)
 
-    # Turn 2: Follow-up & Contact validation
-    if turn_count == 2:
-        # Check if email or phone is missing or incomplete
-        missing = []
-        if not email_match:
-            missing.append("a valid **email address** (e.g. name@example.com)")
-        if not phone_match:
-            missing.append("a valid **phone number** (e.g. +1 555-123-4567)")
-
-        if missing:
+    # State Branch 1: Customer has not provided contact details (Email or Phone)
+    if not email_match or not phone_match:
+        # If this is the very first inquiry
+        if len(user_messages) == 1:
+            name_salutation = f" {name}" if name != "there" else ""
             return (
-                "Thank you for sharing that context!\n\n"
-                f"Before we book an appointment, I noticed we still need: {' and '.join(missing)}.\n"
-                "Could you please share those contact details?"
+                f"Thank you{name_salutation}! It's a pleasure to connect with you.\n\n"
+                f"Regarding your enquiry: *\"{user_messages[0]}\"*\n\n"
+                "To help us best prepare for your consultation, could you tell me a little more about "
+                "your specific timeline or requirements? Also, please share your **contact phone number** "
+                "and **email address** so our team can reach you."
             )
         else:
+            missing = []
+            if not email_match:
+                missing.append("a valid **email address** (e.g. name@example.com)")
+            if not phone_match:
+                missing.append("a valid **phone number** (e.g. +1 555-123-4567)")
+
             return (
-                "Perfect, I've noted your contact details and enquiry context!\n\n"
-                "📅 **Appointment Scheduling:**\n"
-                "When would you prefer to schedule your consultation? "
-                "Please let me know your preferred **date and time** (for example: *Tomorrow at 2:00 PM* or *Friday, Nov 14 at 10:00 AM*)."
+                "Thank you for sharing that context!\n\n"
+                f"Before we confirm your appointment slot, I noticed we still need: {' and '.join(missing)}.\n"
+                "Could you please share those details?"
             )
 
-    # Turn 3: Appointment Date & Time
-    if turn_count == 3:
-        # Check if input looks like date/time
-        date_keywords = ["am", "pm", "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "nov", "dec", "jan", "feb", "at", "morning", "afternoon", "202", ":"]
-        has_time_ref = any(k in last_user_input.lower() for k in date_keywords)
-
-        if not has_time_ref:
-            return (
-                "⚠️ I couldn't quite detect a specific date or time from your response.\n\n"
-                "Could you please clarify your preferred **date and time**? "
-                "(For instance: *Tuesday, Nov 11 at 3:00 PM*)."
-            )
-
-        # Extract details for final confirmation
-        email = email_match.group(0) if email_match else "customer@example.com"
-        phone = phone_match.group(0) if phone_match else "+1 (555) 019-2834"
-        name = user_messages[0].split(",")[0].split(".")[0].replace("My name is", "").replace("I am", "").strip()
-        if len(name) > 30 or not name:
-            name = "Valued Customer"
-
-        ref_id = f"CNV-{abs(hash(email + last_user_input)) % 90000 + 10000}"
-        
-        # Persist to database
-        try:
-            create_appointment(
-                ref_id=ref_id,
-                name=name,
-                phone=phone,
-                email=email,
-                purpose=user_messages[0],
-                appointment_time=last_user_input
-            )
-        except Exception as e:
-            print(f"Error persisting appointment: {e}")
-
+    # State Branch 2: Contact info exists, but appointment date/time is needed
+    if not has_time_ref:
         return (
-            "✅ **Appointment Confirmed!**\n\n"
-            "Thank you! Your appointment has been scheduled successfully. Here is your final booking confirmation:\n\n"
-            "| Field | Details |\n"
-            "| :--- | :--- |\n"
-            f"| **Reference ID** | `{ref_id}` |\n"
-            f"| **Customer Name** | {name} |\n"
-            f"| **Phone Number** | {phone} |\n"
-            f"| **Email Address** | {email} |\n"
-            f"| **Purpose of Enquiry** | {user_messages[0]} |\n"
-            f"| **Scheduled Date & Time** | **{last_user_input}** |\n"
-            "| **Status** | 🟢 Confirmed |\n\n"
-            "📬 *A calendar invitation and confirmation receipt have been dispatched to your email. "
-            "If you need to reschedule or have any questions before then, simply reply here!*"
+            f"Thank you, {name}! I have noted your contact details:\n"
+            f"- 📞 Phone: **{phone_match.group(0)}**\n"
+            f"- ✉️ Email: **{email_match.group(0)}**\n\n"
+            "📅 **Appointment Scheduling:**\n"
+            "When would you prefer to schedule your consultation? "
+            "Please select or type your preferred **date and time** (for example: *Tomorrow at 10:00 AM* or *Friday at 2:30 PM*)."
         )
 
-    # Turn 4+: Post-confirmation support
-    return (
-        "Your appointment (`CNV-84920`) is confirmed! "
-        "Is there any additional question or requirement you would like us to note for your specialist?"
-    )
+    # State Branch 3: Contact info AND Date/Time provided -> CONFIRMATION!
+    final_email = email_match.group(0)
+    final_phone = phone_match.group(0)
+    customer_name = name if name != "there" else "Valued Customer"
+    appointment_slot = last_user_input
 
+    # Generate unique reference code
+    ref_id = f"CNV-{abs(hash(final_email + appointment_slot)) % 90000 + 10000}"
+
+    # Persist directly into SQLite database
+    try:
+        create_appointment(
+            ref_id=ref_id,
+            name=customer_name,
+            phone=final_phone,
+            email=final_email,
+            purpose=user_messages[0],
+            appointment_time=appointment_slot
+        )
+    except Exception as e:
+        print(f"Error persisting appointment: {e}")
+
+    return (
+        "✅ **Appointment Confirmed!**\n\n"
+        "Thank you! Your appointment has been scheduled successfully. Here is your final booking confirmation:\n\n"
+        "| Field | Details |\n"
+        "| :--- | :--- |\n"
+        f"| **Reference ID** | `{ref_id}` |\n"
+        f"| **Customer Name** | {customer_name} |\n"
+        f"| **Phone Number** | {final_phone} |\n"
+        f"| **Email Address** | {final_email} |\n"
+        f"| **Purpose of Enquiry** | {user_messages[0]} |\n"
+        f"| **Scheduled Date & Time** | **{appointment_slot}** |\n"
+        "| **Status** | 🟢 Confirmed |\n\n"
+        "📬 *A calendar invitation and confirmation receipt have been dispatched to your email. "
+        "If you need to reschedule or have any questions before then, simply reply here!*"
+    )

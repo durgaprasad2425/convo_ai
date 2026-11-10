@@ -57,7 +57,11 @@ async def mistral_stream(request: ChatRequest) -> AsyncGenerator[str, None]:
 
         messages.append({"role": "system", "content": system_content})
             
-        for msg in request.messages:
+        filtered_msgs = [m for m in request.messages if m.content.strip()]
+        while filtered_msgs and filtered_msgs[0].role == "assistant":
+            filtered_msgs = filtered_msgs[1:]
+
+        for msg in filtered_msgs:
             messages.append({"role": msg.role, "content": msg.content})
 
         response = await client.chat.completions.create(
@@ -96,10 +100,14 @@ async def gemini_stream(request: ChatRequest) -> AsyncGenerator[str, None]:
         if request.system_prompt:
             system_instruction += f"\n\nAdditional Instructions: {request.system_prompt}"
 
+        filtered_msgs = [m for m in request.messages if m.content.strip()]
+        while filtered_msgs and filtered_msgs[0].role == "assistant":
+            filtered_msgs = filtered_msgs[1:]
+
         contents = []
-        for i, msg in enumerate(request.messages):
+        for i, msg in enumerate(filtered_msgs):
             text = msg.content
-            if i == len(request.messages) - 1 and attachment_ctx:
+            if i == len(filtered_msgs) - 1 and attachment_ctx:
                 text += attachment_ctx
                 
             contents.append({
@@ -152,7 +160,11 @@ async def openai_stream(request: ChatRequest) -> AsyncGenerator[str, None]:
 
         messages.append({"role": "system", "content": system_content})
             
-        for msg in request.messages:
+        filtered_msgs = [m for m in request.messages if m.content.strip()]
+        while filtered_msgs and filtered_msgs[0].role == "assistant":
+            filtered_msgs = filtered_msgs[1:]
+
+        for msg in filtered_msgs:
             messages.append({"role": msg.role, "content": msg.content})
 
         response = await client.chat.completions.create(
